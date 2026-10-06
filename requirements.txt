@@ -1,6 +1,7 @@
 # --- Required ---
 langsmith>=0.1.80        # tracing is mandatory; the bot will not start without it
 python-dotenv>=1.0.0     # loads .env so the settings in it are actually read
+flask>=3.0.0             # web chat page (web_app.py); not needed for the terminal bot
 
 # --- Real LLM providers (optional; MockProvider is used without them) ---
 openai>=1.30.0          # needed only if OPENAI_API_KEY is set

@@ -29,6 +29,28 @@ On startup the bot checks the LangSmith connection and creates the
 answer to most questions depends on both. To use real LLM providers,
 also fill in `OPENAI_API_KEY` and/or `ANTHROPIC_API_KEY` in `.env`.
 
+### Web chat
+
+The same bot is also available as a chat page in the browser:
+
+```bash
+python web_app.py
+```
+
+Then open http://127.0.0.1:5000. Choose the market and the supplier on the
+left and chat on the right; the chat's language follows the market. Tick
+"Show how each reply was decided" to see the intent, whether the knowledge
+base had an answer, and whether the turn was handed to a person.
+
+The page (`web/index.html`) is only the front door: it sends each message to
+a small web service (`web_app.py`), which calls the same
+`flow_engine.handle_message` as the terminal version. A WhatsApp or Teams
+connection would be another front door on the same `/api/chat` endpoint.
+This is a local demo server with no login and no rate limit, so it listens
+on 127.0.0.1 only.
+
+### Terminal
+
 Type `report` inside the chat session at any point to see the analytics
 summary (KB gap rate, escalation rate, estimated cost). The report covers
 every turn stored in `support_bot.db`, so it includes earlier sessions, not
@@ -40,7 +62,10 @@ only the current one.
 support-bot/
 ├── config.py             # all settings: markets, suppliers; forces LangSmith tracing on
 ├── exceptions.py          # shared exception hierarchy for precise error handling
-├── main.py                 # CLI entry point
+├── main.py                 # terminal entry point
+├── web_app.py              # web entry point: small Flask service + chat page
+├── web/
+│   └── index.html           # the chat page (HTML, CSS and JS in one file)
 ├── models/
 │   ├── llm_client.py        # provider chain + retry + fallback + graceful degrade
 │   └── disclosure.py         # enforces "I'm an AI" in code, not just a prompt

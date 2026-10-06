@@ -76,6 +76,10 @@ MODEL_COST_PER_1K_TOKENS = {
     "mock-model": {"input": 0.0, "output": 0.0},
 }
 
+# --- Web chat ----------------------------------------------------------------
+# Port for the local chat page started with `python web_app.py`.
+WEB_PORT = int(os.getenv("SUPPORT_BOT_WEB_PORT", "5000"))
+
 # --- Storage -----------------------------------------------------------------
 DB_PATH = os.getenv("SUPPORT_BOT_DB_PATH", "support_bot.db")
 FALLBACK_LOG_PATH = os.getenv("SUPPORT_BOT_FALLBACK_LOG", "fallback_log.jsonl")

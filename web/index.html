@@ -1,0 +1,571 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rental support chat</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Overpass:wght@400;600;800&display=swap" rel="stylesheet">
+<style>
+  /* Palette taken from the road: asphalt ink, lane-marking yellow, and
+     tail-light red, used only when a chat is handed to a person. */
+  :root {
+    --paper: #f6f8f9;
+    --mist: #e2e9ed;
+    --surface: #ffffff;
+    --ink: #12303a;
+    --muted: #4f6a73;
+    --lane: #f2c230;
+    --signal: #b93a2b;
+    --radius: 10px;
+    /* Overpass is drawn from US highway signage, which suits the subject. */
+    --font: "Overpass", "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--font);
+    font-size: 1rem;
+    line-height: 1.5;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--ink);
+    outline-offset: 2px;
+    box-shadow: 0 0 0 5px var(--lane);
+  }
+
+  .page {
+    display: grid;
+    grid-template-columns: minmax(280px, 380px) minmax(0, 1fr);
+    min-height: 100vh;
+    max-width: 1180px;
+    margin: 0 auto;
+  }
+
+  /* ---------- Left: the booking ---------- */
+  .booking {
+    padding: 48px 40px 32px 32px;
+    /* The dashed centre line of a road separates booking from chat. */
+    border-right: 4px dashed var(--lane);
+  }
+  .booking h1 {
+    margin: 0 0 12px;
+    font-size: 2rem;
+    font-weight: 800;
+    line-height: 1.15;
+    letter-spacing: -0.01em;
+  }
+  .booking p { margin: 0 0 16px; color: var(--muted); max-width: 34ch; }
+
+  fieldset { border: 0; margin: 28px 0 0; padding: 0; min-width: 0; }
+  legend { padding: 0; margin-bottom: 8px; font-weight: 600; }
+
+  .choices { display: flex; flex-wrap: wrap; gap: 8px; }
+  .choices label { position: relative; cursor: pointer; }
+  .choices input { position: absolute; opacity: 0; inset: 0; cursor: pointer; }
+  .choices span {
+    display: block;
+    padding: 8px 14px 6px;
+    border: 2px solid var(--mist);
+    border-radius: 999px;
+    background: var(--surface);
+    font-weight: 600;
+  }
+  .choices input:checked + span { background: var(--ink); border-color: var(--ink); color: #fff; }
+  .choices input:focus-visible + span { outline: 2px solid var(--ink); outline-offset: 2px; box-shadow: 0 0 0 5px var(--lane); }
+
+  .booking .note { margin-top: 12px; font-size: 0.9rem; }
+
+  .tools { margin-top: 36px; padding-top: 24px; border-top: 2px solid var(--mist); }
+  .check { display: flex; gap: 10px; align-items: flex-start; cursor: pointer; }
+  .check input { width: 18px; height: 18px; margin: 3px 0 0; accent-color: var(--ink); }
+
+  button { font: inherit; cursor: pointer; }
+  .quiet {
+    margin-top: 20px;
+    padding: 8px 16px 6px;
+    border: 2px solid var(--ink);
+    border-radius: 999px;
+    background: transparent;
+    color: var(--ink);
+    font-weight: 600;
+  }
+  .quiet:hover { background: var(--ink); color: #fff; }
+
+  /* ---------- Right: the chat ---------- */
+  .chat {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    min-height: 480px;
+    padding: 24px 24px 24px 40px;
+  }
+  .chat-head { padding: 0 4px 16px; }
+  .chat-head h2 { margin: 0; font-size: 1.25rem; font-weight: 800; }
+  .chat-head p { margin: 2px 0 0; color: var(--muted); }
+
+  .log {
+    flex: 1;
+    overflow-y: auto;
+    padding: 20px;
+    background: var(--surface);
+    border: 2px solid var(--mist);
+    border-radius: var(--radius) var(--radius) 0 0;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .empty { margin: auto 0; }
+  .empty h3 { margin: 0 0 12px; font-size: 1.1rem; font-weight: 600; }
+  .suggestions { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
+  .suggestions button {
+    padding: 9px 14px 7px;
+    border: 2px solid var(--mist);
+    border-radius: var(--radius);
+    background: var(--paper);
+    color: var(--ink);
+    text-align: left;
+  }
+  .suggestions button:hover { border-color: var(--ink); }
+
+  .msg { max-width: min(62ch, 88%); }
+  .msg .who { margin: 0 0 4px; font-size: 0.85rem; font-weight: 600; color: var(--muted); }
+  .msg .text {
+    margin: 0;
+    padding: 11px 14px 9px;
+    border-radius: var(--radius);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+  .msg.bot { align-self: flex-start; }
+  .msg.bot .text { background: var(--paper); border: 2px solid var(--mist); border-top-left-radius: 2px; }
+  .msg.user { align-self: flex-end; }
+  .msg.user .text { background: var(--ink); color: #fff; border-top-right-radius: 2px; }
+
+  .handoff {
+    margin: 8px 0 0;
+    padding: 6px 0 4px 10px;
+    border-left: 4px solid var(--signal);
+    color: var(--signal);
+    font-weight: 600;
+    font-size: 0.95rem;
+  }
+  .why { margin: 8px 0 0; padding: 0; font-size: 0.85rem; color: var(--muted); }
+  .why dt { display: inline; font-weight: 600; margin-right: 0.35em; }
+  .why dd { display: inline; margin: 0; }
+  body:not(.show-why) .why { display: none; }
+
+  .problem {
+    align-self: stretch;
+    margin: 0;
+    padding: 10px 14px 8px;
+    border: 2px solid var(--signal);
+    border-radius: var(--radius);
+    color: var(--signal);
+    font-weight: 600;
+  }
+
+  .typing { align-self: flex-start; color: var(--muted); font-size: 0.95rem; }
+  .typing i {
+    display: inline-block; width: 6px; height: 6px; margin-left: 3px;
+    border-radius: 50%; background: var(--muted);
+    animation: blink 1.2s infinite both;
+  }
+  .typing i:nth-child(2) { animation-delay: 0.2s; }
+  .typing i:nth-child(3) { animation-delay: 0.4s; }
+  @keyframes blink { 0%, 80%, 100% { opacity: 0.25; } 40% { opacity: 1; } }
+  @media (prefers-reduced-motion: reduce) { .typing i { animation: none; opacity: 0.6; } }
+
+  .composer {
+    display: flex;
+    gap: 8px;
+    padding: 12px;
+    background: var(--surface);
+    border: 2px solid var(--mist);
+    border-top: 0;
+    border-radius: 0 0 var(--radius) var(--radius);
+  }
+  .composer textarea {
+    flex: 1;
+    min-height: 44px;
+    max-height: 140px;
+    padding: 10px 12px 8px;
+    border: 2px solid var(--mist);
+    border-radius: var(--radius);
+    background: var(--paper);
+    color: var(--ink);
+    font: inherit;
+    resize: none;
+  }
+  .composer textarea::placeholder { color: var(--muted); }
+  .send {
+    align-self: flex-end;
+    min-height: 44px;
+    padding: 10px 20px 8px;
+    border: 0;
+    border-radius: var(--radius);
+    background: var(--lane);
+    color: var(--ink);
+    font-weight: 800;
+  }
+  .send:hover { filter: brightness(0.95); }
+  .send:disabled, .composer textarea:disabled { opacity: 0.55; cursor: default; }
+
+  @media (max-width: 760px) {
+    .page { grid-template-columns: minmax(0, 1fr); }
+    .booking { padding: 28px 16px 24px; border-right: 0; border-bottom: 4px dashed var(--lane); }
+    .booking h1 { font-size: 1.6rem; }
+    .booking p { max-width: none; }
+    .chat { height: auto; min-height: 80vh; padding: 20px 16px; }
+    .log { min-height: 320px; }
+    .msg { max-width: 94%; }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <section class="booking" aria-labelledby="page-title">
+    <h1 id="page-title">Rental support chat</h1>
+    <p>Ask the assistant about a car rental booking. It answers from the policy of the supplier the booking is with.</p>
+
+    <form id="booking-form">
+      <fieldset>
+        <legend>Market</legend>
+        <div class="choices" id="markets"></div>
+      </fieldset>
+      <fieldset>
+        <legend>Supplier</legend>
+        <div class="choices" id="suppliers"></div>
+        <p class="note">A live system reads the supplier from the booking number. Here you choose it. Changing either choice starts a new chat.</p>
+      </fieldset>
+    </form>
+
+    <div class="tools">
+      <label class="check">
+        <input type="checkbox" id="why-toggle">
+        <span>Show how each reply was decided</span>
+      </label>
+      <button type="button" class="quiet" id="restart">Start a new chat</button>
+    </div>
+  </section>
+
+  <section class="chat" aria-labelledby="chat-title">
+    <div class="chat-head">
+      <h2 id="chat-title"></h2>
+      <p id="chat-sub"></p>
+    </div>
+    <div class="log" id="log" role="log" aria-live="polite" aria-labelledby="chat-title"></div>
+    <form class="composer" id="composer">
+      <textarea id="input" rows="1" aria-label="Message"></textarea>
+      <button type="submit" class="send" id="send"></button>
+    </form>
+  </section>
+
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  // The chat itself speaks the market's language; the booking panel on the
+  // left stays in English because it is the demo's own frame.
+  var TEXT = {
+    de: {
+      lang: "de", country: "Deutschland",
+      title: "KI-Assistent", sub: function (s, c) { return s + "-Buchungen, " + c; },
+      bot: "KI-Assistent", you: "Sie",
+      empty: "Stellen Sie eine Frage zu Ihrer Buchung",
+      placeholder: "Ihre Frage zur Buchung", send: "Senden", typing: "Der Assistent schreibt",
+      handoff: "An eine Person aus unserem Team weitergegeben.",
+      suggestions: [
+        "Wie kann ich meine Buchung stornieren?",
+        "Was passiert, wenn ich das Auto 30 Minuten zu spät zurückgebe?",
+        "Kann ich meinen Hund mitnehmen?"
+      ],
+      errors: {
+        network: "Die Nachricht wurde nicht gesendet. Prüfen Sie die Verbindung und senden Sie sie erneut.",
+        unknown_session: "Dieser Chat wurde beendet. Ein neuer Chat ist gestartet. Senden Sie Ihre Nachricht erneut.",
+        message_too_long: "Die Nachricht ist zu lang. Kürzen Sie sie auf höchstens {n} Zeichen.",
+        bot_unavailable: "Der Assistent ist gerade nicht erreichbar. Senden Sie die Nachricht in einem Moment erneut.",
+        start: "Der Chat konnte nicht gestartet werden. Läuft der Server noch? Laden Sie die Seite neu."
+      }
+    },
+    es: {
+      lang: "es", country: "España",
+      title: "Asistente de IA", sub: function (s, c) { return "Reservas de " + s + ", " + c; },
+      bot: "Asistente de IA", you: "Tú",
+      empty: "Haz una pregunta sobre tu reserva",
+      placeholder: "Tu pregunta sobre la reserva", send: "Enviar", typing: "El asistente está escribiendo",
+      handoff: "Derivado a una persona de nuestro equipo.",
+      suggestions: [
+        "¿Cómo puedo cancelar mi reserva?",
+        "¿Qué pasa si devuelvo el coche 30 minutos tarde?",
+        "¿Puedo llevar a mi perro?"
+      ],
+      errors: {
+        network: "El mensaje no se ha enviado. Comprueba la conexión y envíalo de nuevo.",
+        unknown_session: "Este chat ha terminado. Se ha iniciado uno nuevo. Envía tu mensaje otra vez.",
+        message_too_long: "El mensaje es demasiado largo. Redúcelo a {n} caracteres como máximo.",
+        bot_unavailable: "El asistente no está disponible ahora. Envía el mensaje de nuevo en un momento.",
+        start: "No se ha podido iniciar el chat. ¿Sigue activo el servidor? Recarga la página."
+      }
+    },
+    us: {
+      lang: "en", country: "United States",
+      title: "AI assistant", sub: function (s, c) { return s + " bookings, " + c; },
+      bot: "AI assistant", you: "You",
+      empty: "Ask a question about your booking",
+      placeholder: "Your question about the booking", send: "Send", typing: "The assistant is writing",
+      handoff: "Passed to a member of our team.",
+      suggestions: [
+        "How do I cancel my booking?",
+        "What happens if I return the car 30 minutes late?",
+        "Can I bring my dog?"
+      ],
+      errors: {
+        network: "The message was not sent. Check your connection and send it again.",
+        unknown_session: "This chat has ended. A new chat has started. Send your message again.",
+        message_too_long: "The message is too long. Shorten it to {n} characters or fewer.",
+        bot_unavailable: "The assistant is not available right now. Send the message again in a moment.",
+        start: "The chat could not be started. Is the server still running? Reload the page."
+      }
+    }
+  };
+  var MARKET_NAMES = { de: "Germany", es: "Spain", us: "United States" };
+
+  var el = function (id) { return document.getElementById(id); };
+  var log = el("log"), input = el("input"), sendBtn = el("send");
+  var state = { market: null, supplier: null, suppliers: {}, sessionId: null, maxLength: 1000, busy: false };
+
+  function t() { return TEXT[state.market] || TEXT.us; }
+
+  function node(tag, className, text) {
+    var n = document.createElement(tag);
+    if (className) n.className = className;
+    if (text !== undefined) n.textContent = text;   // never innerHTML: replies are untrusted text
+    return n;
+  }
+
+  function scrollDown() { log.scrollTop = log.scrollHeight; }
+
+  // ----- building the booking choices -----
+  function addChoice(container, group, value, label, checked) {
+    var wrap = node("label");
+    var radio = node("input");
+    radio.type = "radio"; radio.name = group; radio.value = value; radio.checked = checked;
+    wrap.appendChild(radio);
+    wrap.appendChild(node("span", "", label));
+    container.appendChild(wrap);
+  }
+
+  // ----- chat rendering -----
+  function showEmpty() {
+    log.textContent = "";
+    var box = node("div", "empty");
+    box.appendChild(node("h3", "", t().empty));
+    var list = node("div", "suggestions");
+    t().suggestions.forEach(function (q) {
+      var b = node("button", "", q);
+      b.type = "button";
+      b.addEventListener("click", function () { send(q); });
+      list.appendChild(b);
+    });
+    box.appendChild(list);
+    log.appendChild(box);
+  }
+
+  function clearEmpty() {
+    var box = log.querySelector(".empty");
+    if (box) box.remove();
+  }
+
+  function addUser(text) {
+    clearEmpty();
+    var m = node("div", "msg user");
+    m.appendChild(node("p", "who", t().you));
+    m.appendChild(node("p", "text", text));
+    log.appendChild(m);
+    scrollDown();
+  }
+
+  function addBot(data) {
+    // The backend ends later replies with "[AI]". Every bot message here
+    // already carries the "AI assistant" label, so the tag is not repeated.
+    var text = data.reply.replace(/\s*\[AI\]\s*$/, "");
+    var m = node("div", "msg bot");
+    m.appendChild(node("p", "who", t().bot));
+    m.appendChild(node("p", "text", text));
+    if (data.escalated) m.appendChild(node("p", "handoff", t().handoff));
+
+    var why = node("dl", "why");
+    [["Intent", data.intent],
+     ["Knowledge base", data.escalated ? "not used" : (data.kb_gap ? "no matching entry (recorded as a gap)" : "answered from the supplier's entry")],
+     ["Handed to a person", data.escalated ? "yes" : "no"]
+    ].forEach(function (row) {
+      var line = node("div");
+      line.appendChild(node("dt", "", row[0] + ":"));
+      line.appendChild(node("dd", "", row[1]));
+      why.appendChild(line);
+    });
+    m.appendChild(why);
+    log.appendChild(m);
+    scrollDown();
+  }
+
+  function addProblem(text) {
+    var p = node("p", "problem", text);
+    p.setAttribute("role", "alert");
+    log.appendChild(p);
+    scrollDown();
+  }
+
+  function setTyping(on) {
+    var existing = log.querySelector(".typing");
+    if (existing) existing.remove();
+    if (!on) return;
+    var p = node("p", "typing", t().typing);
+    for (var i = 0; i < 3; i++) p.appendChild(node("i"));
+    log.appendChild(p);
+    scrollDown();
+  }
+
+  function setBusy(on) {
+    state.busy = on;
+    sendBtn.disabled = on;
+    input.disabled = on;
+    if (!on) input.focus();
+  }
+
+  function applyLanguage() {
+    var c = t();
+    el("chat-title").textContent = c.title;
+    el("chat-sub").textContent = c.sub(state.suppliers[state.supplier] || "", c.country);
+    input.placeholder = c.placeholder;
+    input.setAttribute("aria-label", c.placeholder);
+    sendBtn.textContent = c.send;
+    log.lang = c.lang;
+    el("composer").lang = c.lang;
+  }
+
+  // ----- talking to the server -----
+  function post(url, body) {
+    return fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body)
+    }).then(function (res) {
+      return res.json().catch(function () { return {}; }).then(function (data) {
+        return { ok: res.ok, data: data };
+      });
+    });
+  }
+
+  function startSession() {
+    state.sessionId = null;
+    applyLanguage();
+    showEmpty();
+    return post("/api/sessions", { market: state.market, supplier: state.supplier })
+      .then(function (r) {
+        if (!r.ok) throw new Error("start");
+        state.sessionId = r.data.session_id;
+      })
+      .catch(function () { addProblem(t().errors.start); });
+  }
+
+  function send(text) {
+    text = (text || "").trim();
+    if (!text || state.busy) return;
+    if (text.length > state.maxLength) {
+      addProblem(t().errors.message_too_long.replace("{n}", state.maxLength));
+      return;
+    }
+    if (!state.sessionId) { addProblem(t().errors.start); return; }
+
+    addUser(text);
+    input.value = "";
+    resize();
+    setBusy(true);
+    setTyping(true);
+
+    post("/api/chat", { session_id: state.sessionId, message: text })
+      .then(function (r) {
+        setTyping(false);
+        if (r.ok) { addBot(r.data); return; }
+        var code = r.data.error || "bot_unavailable";
+        var message = (t().errors[code] || t().errors.bot_unavailable).replace("{n}", state.maxLength);
+        if (code === "unknown_session") {
+          // The server was restarted. Keep what is on screen, open a new
+          // chat behind it, and give the text back so it can be sent again.
+          input.value = text;
+          return post("/api/sessions", { market: state.market, supplier: state.supplier }).then(function (s) {
+            if (s.ok) state.sessionId = s.data.session_id;
+            addProblem(s.ok ? message : t().errors.start);
+          });
+        }
+        input.value = text;
+        addProblem(message);
+      })
+      .catch(function () {
+        setTyping(false);
+        input.value = text;       // nothing is lost: the text goes back into the box
+        addProblem(t().errors.network);
+      })
+      .then(function () { setBusy(false); resize(); });
+  }
+
+  function resize() {
+    input.style.height = "auto";
+    input.style.height = Math.min(input.scrollHeight + 4, 140) + "px";
+  }
+
+  // ----- wiring -----
+  el("composer").addEventListener("submit", function (e) { e.preventDefault(); send(input.value); });
+  input.addEventListener("input", resize);
+  input.addEventListener("keydown", function (e) {
+    if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); send(input.value); }
+  });
+  el("booking-form").addEventListener("change", function (e) {
+    if (e.target.name === "market") state.market = e.target.value;
+    if (e.target.name === "supplier") state.supplier = e.target.value;
+    startSession();
+  });
+  el("restart").addEventListener("click", function () { startSession().then(function () { input.focus(); }); });
+  el("why-toggle").addEventListener("change", function (e) {
+    document.body.classList.toggle("show-why", e.target.checked);
+    scrollDown();
+  });
+
+  fetch("/api/config")
+    .then(function (res) { return res.json(); })
+    .then(function (cfg) {
+      state.market = cfg.default_market;
+      state.supplier = cfg.default_supplier;
+      state.maxLength = cfg.max_message_length;
+      input.maxLength = cfg.max_message_length;
+      cfg.markets.forEach(function (m) {
+        addChoice(el("markets"), "market", m, MARKET_NAMES[m] || m.toUpperCase(), m === state.market);
+      });
+      cfg.suppliers.forEach(function (s) {
+        state.suppliers[s.id] = s.name;
+        addChoice(el("suppliers"), "supplier", s.id, s.name, s.id === state.supplier);
+      });
+      return startSession();
+    })
+    .catch(function () {
+      state.market = "us";
+      applyLanguage();
+      addProblem(TEXT.us.errors.start);
+    });
+})();
+</script>
+</body>
+</html>
