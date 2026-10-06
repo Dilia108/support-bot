@@ -1,4 +1,4 @@
-# Multi-Market Support Bot
+# Multi-Market Rental Support Bot
 
 A modular, production-minded chatbot flow for a fictional international
 rental/mobility company, built to practice the skills behind an
