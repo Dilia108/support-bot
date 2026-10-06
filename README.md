@@ -45,7 +45,7 @@ support-bot/
 │   ├── llm_client.py        # provider chain + retry + fallback + graceful degrade
 │   └── disclosure.py         # enforces "I'm an AI" in code, not just a prompt
 ├── knowledge/
-│   ├── kb_loader.py           # loads one supplier's FAQ file for one market
+│   ├── kb_loader.py           # loads the KB version in effect for one market + supplier
 │   └── retriever.py            # weighted keyword retrieval + KB-gap detection
 ├── flow/
 │   ├── intents.py               # rule-based intent classification
@@ -59,10 +59,14 @@ support-bot/
 ├── analytics/
 │   └── dashboard.py                  # reads the log, reports gaps/cost/escalations
 └── knowledge_base/
+    ├── CHANGELOG.md                  # what changed in each KB version, and why
     ├── SOURCES.md                    # where every FAQ fact comes from, and known gaps
-    ├── de/  avis.md  enterprise.md  sixt.md
-    ├── es/  avis.md  enterprise.md  sixt.md
-    └── us/  avis.md  enterprise.md  sixt.md
+    ├── de/
+    │   ├── avis/2026-10-06.md        # one dated file per KB version
+    │   ├── enterprise/2026-10-06.md
+    │   └── sixt/2026-10-06.md
+    ├── es/  (same layout)
+    └── us/  (same layout)
 ```
 
 Each module does one job and can be read/reviewed independently — you
@@ -72,9 +76,9 @@ don't need to understand LangSmith to review `flow_engine.py`.
 
 | Requirement | Where it lives |
 |---|---|
-| Market deployment & prioritization | `knowledge_base/{market}/{supplier}.md`, `config.SUPPORTED_MARKETS`, `config.SUPPLIER_NAMES` — a new market is a folder, a new supplier is one file per market plus one line in `config.py` |
+| Market deployment & prioritization | `knowledge_base/{market}/{supplier}/`, `config.SUPPORTED_MARKETS`, `config.SUPPLIER_NAMES` — a new market is a folder, a new supplier is one folder per market plus one line in `config.py` |
 | Feature design & bot behavior | `flow/intents.py` + `flow/flow_engine.py` — the actual conversation logic, readable without touching the LLM layer |
-| Knowledge base management | `knowledge/kb_loader.py` — plain markdown, one file per market and supplier, fully git-diffable and version-controlled; `knowledge_base/SOURCES.md` records the source of every fact |
+| Knowledge base management | `knowledge/kb_loader.py` — plain markdown, one dated file per KB version for each market and supplier; `knowledge_base/CHANGELOG.md` records what changed and why, `knowledge_base/SOURCES.md` the source of every fact |
 | Compliance & localization | `compliance/rules.py` (fail-closed escalation) + `models/disclosure.py` (AI disclosure enforced in code) + per-market tone in `flow_engine._escalation_response` |
 | Performance analytics | `analytics/dashboard.py` — KB gap rate, escalation rate, and cost per market and supplier from real logged data |
 
@@ -114,6 +118,14 @@ don't need to understand LangSmith to review `flow_engine.py`.
   booking number. The FAQ content is taken from the suppliers' public help
   pages (see `knowledge_base/SOURCES.md`) and must be re-checked before
   real use.
+- **Knowledge base versions are dated files, never edits.** A policy
+  change is a new file named after the day it takes effect
+  (`knowledge_base/de/sixt/2026-11-01.md`); the loader uses the newest
+  file dated today or earlier. Old versions stay on disk, so you can always
+  show what the bot was allowed to say on a given day, prepare an announced
+  change in advance with a future date, and roll back by deleting one
+  file. Each LangSmith trace records the KB version that answered, and
+  `python knowledge/kb_loader.py` lists which version is live everywhere.
 - **One trace per conversation turn, not per model call.** Every customer
   message becomes a `conversation_turn` trace in the `support-bot` project,
   with the customer message as input and the bot's reply as output. The

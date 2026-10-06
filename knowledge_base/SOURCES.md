@@ -1,7 +1,8 @@
 # Knowledge base sources
 
-Each FAQ file (`<market>/<supplier>.md`) contains only what the supplier
-publishes on the pages below. Checked on 2026-10-06. Supplier policies
+Each FAQ file (`<market>/<supplier>/<date>.md`) contains only what the
+supplier publishes on the pages below. Checked on 2026-10-06, for the
+versions dated 2026-10-06. What changed between versions is in `CHANGELOG.md`. Supplier policies
 change and differ by rate type, so re-check before relying on them.
 
 ## Avis

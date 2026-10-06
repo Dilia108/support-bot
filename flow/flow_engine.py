@@ -34,7 +34,8 @@ from observability.logger import ConversationLogEntry, log_conversation, log_err
 from observability.tracing import trace_call, estimate_cost
 
 # Simple in-process cache so we don't hit disk on every single message.
-# A production version would invalidate this on KB file changes.
+# A production version would invalidate this on KB file changes; as it is,
+# a new dated KB version is picked up the next time the bot is started.
 _KB_CACHE: dict[tuple[str, str], list] = {}
 
 
@@ -120,8 +121,10 @@ def _run_turn(session_id: str, market: str, supplier: str, user_text: str) -> Tu
 
     # --- Stage 4: retrieve KB context ---------------------------------------
     context_text = ""
+    kb_version = ""  # which dated KB file answered; recorded on the trace
     try:
         documents = _get_kb_documents(market, supplier)
+        kb_version = documents[0].version
         results = retrieve(user_text, documents, min_score=config.KB_MATCH_MIN_SCORE)
         context_text = "\n\n".join(f"{r.document.heading}: {r.document.content}" for r in results)
     except KBLoadError as e:
@@ -144,6 +147,7 @@ def _run_turn(session_id: str, market: str, supplier: str, user_text: str) -> Tu
         intent=intent_result.intent.value,
         session_id=session_id,
         supplier=supplier,
+        kb_version=kb_version,
         user_message=user_text,
         kb_gap=kb_gap,
     ) as trace:
