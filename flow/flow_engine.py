@@ -204,7 +204,12 @@ _REPLY_RULES = (
     "exactly that. Do not turn 'not stated' into 'does not exist', and do "
     "not work out a rule for the customer's case from an example: if the "
     "context only gives an example for one hour, do not claim what happens "
-    "after 30 minutes."
+    "after 30 minutes.\n"
+    "5. You can only answer questions. You cannot transfer this chat, contact "
+    "a person, or look up or change a booking, so never offer or promise any "
+    "of these, and do not end with a question that asks whether you should. "
+    "A customer who reads 'I will connect you' waits for someone who never "
+    "comes."
 )
 
 # How to address the customer, per market. Without this the model switches
@@ -218,12 +223,13 @@ _FORM_OF_ADDRESS = {
 def _build_prompt(market: str, supplier: str, intent: Intent, user_text: str, context_text: str, kb_gap: bool) -> str:
     supplier_name = config.SUPPLIER_NAMES.get(supplier, supplier)
     address = _FORM_OF_ADDRESS.get(market, "")
-    address = f"\n5. {address}" if address else ""
+    address = f"\n6. {address}" if address else ""
     if kb_gap or not context_text:
         grounding = (
-            "No specific knowledge base entry was found for this question. "
-            "Be honest that you don't have specific information on this, "
-            "and offer to connect the user with a team member."
+            "No knowledge base entry was found for this question. Say plainly "
+            f"that you do not have this information for {supplier_name}, and do "
+            f"not guess the answer. Tell the customer to contact {supplier_name} "
+            "customer service directly and to have their booking number ready."
         )
     else:
         grounding = f"Use ONLY the following knowledge base context to answer:\n{context_text}"
