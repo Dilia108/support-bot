@@ -60,48 +60,11 @@ only the current one.
 
 What happens to each customer message (`flow/flow_engine.py`):
 
-```mermaid
-flowchart TD
-    start(["Chat starts: market and supplier are set<br/>(a live system reads both from the booking number)"])
-    msg[/"Customer message"/]
-    hist{"Earlier turns<br/>in this chat?"}
-    rewrite["Rewrite the follow-up into a self-contained question<br/>(model call; the original is kept if this fails)"]
-    intent["Detect intent<br/>(keyword rules)"]
-    comp{"Compliance check<br/>on the customer's own words"}
-    esc["Handoff message in the market's language<br/>flagged as escalated"]
-    kb["Load the knowledge base version in effect<br/>for this market and supplier"]
-    retr{"Matching FAQ entry?"}
-    gap["Recorded as a knowledge gap"]
-    noinfo["Instruction: say there is no information<br/>and point to the supplier's customer service"]
-    answer["Instruction: answer from that entry only<br/>plain text, exact figures, no promises, Sie / tú"]
-    llm{"Model call<br/>primary provider, retries, then fallback"}
-    down["Safe handoff message<br/>flagged as escalated"]
-    out["Add the AI disclosure, log the turn to SQLite,<br/>close the LangSmith trace"]
-    reply[/"Reply to the customer"/]
+![Conversation flow: from the customer message through follow-up rewriting, intent detection, the compliance check, knowledge base retrieval and the model call to the reply](docs/diagrams/conversation-flow.png)
 
-    start --> msg --> hist
-    hist -- yes --> rewrite --> intent
-    hist -- no --> intent
-    intent --> comp
-    comp -- "restricted topic, such as accident or lawsuit,<br/>or 'speak to a human',<br/>or the check itself fails" --> esc
-    comp -- clear --> kb
-    kb -- "file missing (logged as an error)" --> noinfo
-    kb --> retr
-    retr -- no --> gap --> noinfo
-    retr -- yes --> answer
-    noinfo --> llm
-    answer --> llm
-    llm -- "all providers fail" --> down
-    llm -- answered --> out
-    esc --> out
-    down --> out
-    out --> reply
-
-    classDef handoff fill:#fbe9e6,stroke:#b93a2b,color:#12303a
-    classDef model fill:#fdf3d0,stroke:#c99a10,color:#12303a
-    class esc,down handoff
-    class rewrite,llm model
-```
+The diagram's source is [docs/diagrams/conversation-flow.mmd](docs/diagrams/conversation-flow.mmd)
+(Mermaid). To change it, edit the source, paste it into
+[mermaid.live](https://mermaid.live), and export the PNG over the old one.
 
 ## Rollout
 

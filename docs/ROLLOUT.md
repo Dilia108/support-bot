@@ -106,18 +106,9 @@ a self-contained question before searching the FAQ (`flow/memory.py`).
 
 ## How a gap becomes a fix
 
-```mermaid
-flowchart LR
-    conv["Conversations"] --> report["Report and traces:<br/>gap rate, escalations,<br/>unanswered questions"]
-    report --> review{"Why did it fail?"}
-    review -- "the FAQ has no answer" --> kbfile["New dated KB file<br/>and CHANGELOG entry"]
-    review -- "the FAQ has it, the bot missed it" --> match["Synonym or retriever rule<br/>and a new test question"]
-    review -- "the answer was wrong" --> rule["Correct the KB text<br/>or add a prompt rule"]
-    kbfile --> tests["Re-run the test questions"]
-    match --> tests
-    rule --> tests
-    tests --> conv
-```
+![How a gap becomes a fix: conversations feed the report, each failure is classified, and the fix is a new KB version, a matching rule, or a corrected text, followed by re-running the test questions](diagrams/improvement-loop.png)
+
+Source: [diagrams/improvement-loop.mmd](diagrams/improvement-loop.mmd)
 
 ## Open findings
 
