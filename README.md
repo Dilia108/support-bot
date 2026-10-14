@@ -49,6 +49,23 @@ connection would be another front door on the same `/api/chat` endpoint.
 This is a local demo server with no login and no rate limit, so it listens
 on 127.0.0.1 only.
 
+### Channel API (for Botpress and other platforms)
+
+Chat platforms run in the cloud and call the bot over the internet, so they
+get their own entry point with an access key:
+
+```bash
+python bot_api.py
+```
+
+It needs `SUPPORT_BOT_API_KEY` in `.env` (a random value of at least 20
+characters) and refuses every request without it in the `X-API-Key` header.
+It runs on port 5001 and exposes only `/v1/config`, `/v1/sessions` and
+`/v1/chat`, not the demo page, and it stops answering after 30 requests a
+minute so a misconfigured flow cannot spend tokens without limit. To reach it
+from a cloud platform during a demo, put a tunnel in front of port 5001, for
+example `cloudflared tunnel --url http://127.0.0.1:5001`.
+
 ### Terminal
 
 Type `report` inside the chat session at any point to see the analytics
@@ -59,7 +76,6 @@ only the current one.
 ## Conversation flow
 
 What happens to each customer message (`flow/flow_engine.py`):
-
 
 ![Conversation flow: from the customer message through follow-up rewriting, intent detection, the compliance check, knowledge base retrieval and the model call to the reply](docs/diagrams/conversation-flow.png)
 
@@ -84,6 +100,7 @@ support-bot/
 ├── exceptions.py          # shared exception hierarchy for precise error handling
 ├── main.py                 # terminal entry point
 ├── web_app.py              # web entry point: small Flask service + chat page
+├── bot_api.py              # channel API for chat platforms (key-protected)
 ├── web/
 │   └── index.html           # the chat page (HTML, CSS and JS in one file)
 ├── models/

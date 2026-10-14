@@ -80,6 +80,13 @@ MODEL_COST_PER_1K_TOKENS = {
 # Port for the local chat page started with `python web_app.py`.
 WEB_PORT = int(os.getenv("SUPPORT_BOT_WEB_PORT", "5000"))
 
+# --- Channel API (python bot_api.py) -------------------------------------------
+# Used by chat platforms such as Botpress. Every request must send this key in
+# the X-API-Key header; the API refuses to start without a key.
+BOT_API_KEY = os.getenv("SUPPORT_BOT_API_KEY", "")
+BOT_API_PORT = int(os.getenv("SUPPORT_BOT_API_PORT", "5001"))
+BOT_API_MAX_REQUESTS_PER_MINUTE = int(os.getenv("SUPPORT_BOT_API_MAX_REQUESTS_PER_MINUTE", "30"))
+
 # --- Storage -----------------------------------------------------------------
 DB_PATH = os.getenv("SUPPORT_BOT_DB_PATH", "support_bot.db")
 FALLBACK_LOG_PATH = os.getenv("SUPPORT_BOT_FALLBACK_LOG", "fallback_log.jsonl")
