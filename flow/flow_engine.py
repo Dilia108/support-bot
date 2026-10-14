@@ -111,11 +111,18 @@ def _run_turn(session_id: str, market: str, supplier: str, user_text: str) -> Tu
     # and retrieval. Never raises: if rewriting fails, the message is used
     # as it is. Its cost is added to the turn's cost below.
     question, rewrite_response = _standalone_question(session_id, market, supplier, user_text, history)
-    intent_result = classify_intent(question)  # never raises
+    # Two intents: the compliance check must judge what the customer actually
+    # wrote, because a rewrite could reword "I want to speak to a human" and
+    # lose the escalation. The rewritten question gives the better topic for
+    # analytics, unless the customer's own words already ask for a person.
+    own_intent = classify_intent(user_text)  # never raises
+    intent_result = own_intent
+    if question != user_text and own_intent.intent != Intent.ESCALATE:
+        intent_result = classify_intent(question)
 
     # --- Stage 2 & 3: compliance check, fail CLOSED ------------------------
     try:
-        compliance_result = check_compliance(market, intent_result.intent, user_text)
+        compliance_result = check_compliance(market, own_intent.intent, user_text)
     except ComplianceCheckError as e:
         log_error("compliance", str(e), market=market, session_id=session_id)
         compliance_result = None  # sentinel: treat as escalate below
