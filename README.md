@@ -74,7 +74,8 @@ support-bot/
 │   └── retriever.py            # weighted keyword retrieval + KB-gap detection
 ├── flow/
 │   ├── intents.py               # rule-based intent classification
-│   └── flow_engine.py            # orchestrates one full conversation turn; builds the prompt
+│   ├── flow_engine.py            # orchestrates one full conversation turn; builds the prompt
+│   └── memory.py                 # last turns per conversation, for follow-up questions
 ├── compliance/
 │   └── rules.py                   # fail-CLOSED escalation rules per market
 ├── observability/
@@ -143,6 +144,20 @@ don't need to understand LangSmith to review `flow_engine.py`.
   booking number. The FAQ content is taken from the suppliers' public help
   pages (see `knowledge_base/SOURCES.md`) and must be re-checked before
   real use.
+- **Follow-up questions are rewritten before retrieval.** The bot keeps
+  the last three turns of each conversation (`flow/memory.py`). A
+  follow-up such as "Und bei zwei Stunden?" has no topic of its own; on its
+  own the keyword retriever matched it to the *cancellation* entry (through
+  "24 Stunden"). So from the second message on, one extra model call turns
+  the message into a self-contained question ("Was passiert, wenn ich das
+  Auto zwei Stunden zu spät zurückgebe?"), and intent detection and
+  retrieval use that question. The answer call also sees the recent turns.
+  This is the "history-aware retriever" pattern from LangChain, written out
+  by hand. If the rewrite fails or returns something unusable, the
+  original message is used, so memory can only help, never break a turn.
+  The compliance check always runs on the customer's own words. The extra
+  call is traced as `rewrite_question` and its tokens and cost are added to
+  the turn.
 - **Knowledge base versions are dated files, never edits.** A policy
   change is a new file named after the day it takes effect
   (`knowledge_base/de/sixt/2026-11-01.md`); the loader uses the newest
@@ -194,8 +209,8 @@ don't need to understand LangSmith to review `flow_engine.py`.
   and a question on another topic that happens to contain one
   FAQ-specific word still matches that entry without being recorded as a
   gap.
-- Session state (`models/disclosure.py`) is in-memory and resets on
-  restart — fine for a demo, would move to Redis/a DB in production.
+- Session state (`models/disclosure.py`, `flow/memory.py`) is in-memory
+  and resets on restart — fine for a demo, would move to Redis/a DB in production.
 
 ## Next steps to extend this further
 

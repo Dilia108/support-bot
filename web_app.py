@@ -119,6 +119,7 @@ def api_chat():
             "intent": result.intent,
             "escalated": result.escalated,
             "kb_gap": result.kb_gap,
+            "understood_as": result.understood_as,
         }
     )
 

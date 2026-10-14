@@ -407,10 +407,13 @@
     if (data.escalated) m.appendChild(node("p", "handoff", t().handoff));
 
     var why = node("dl", "why");
-    [["Intent", data.intent],
+    var rows = [];
+    // Shown only when a follow-up was rewritten using the earlier turns.
+    if (data.understood_as && data.understood_as !== data.asked) rows.push(["Understood as", data.understood_as]);
+    rows.concat([["Intent", data.intent],
      ["Knowledge base", data.escalated ? "not used" : (data.kb_gap ? "no matching entry (recorded as a gap)" : "answered from the supplier's entry")],
      ["Handed to a person", data.escalated ? "yes" : "no"]
-    ].forEach(function (row) {
+    ]).forEach(function (row) {
       var line = node("div");
       line.appendChild(node("dt", "", row[0] + ":"));
       line.appendChild(node("dd", "", row[1]));
@@ -499,7 +502,7 @@
     post("/api/chat", { session_id: state.sessionId, message: text })
       .then(function (r) {
         setTyping(false);
-        if (r.ok) { addBot(r.data); return; }
+        if (r.ok) { r.data.asked = text; addBot(r.data); return; }
         var code = r.data.error || "bot_unavailable";
         var message = (t().errors[code] || t().errors.bot_unavailable).replace("{n}", state.maxLength);
         if (code === "unknown_session") {

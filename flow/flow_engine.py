@@ -9,7 +9,10 @@ its own try/except with an explicit, documented fallback. Nothing here
 should ever raise an unhandled exception back to main.py.
 
 Stage order:
-  1. Classify intent            (never raises -- worst case UNKNOWN)
+  1. Understand the message     (a follow-up is rewritten into a self-contained
+                                 question using the last turns; on any
+                                 failure the message is used as it is),
+     then classify intent       (never raises -- worst case UNKNOWN)
   2. Compliance check           (fail CLOSED -> escalate on error)
   3. Escalate early if required (skip KB + LLM entirely, cheaper + safer)
   4. Retrieve KB context        (from the customer's supplier only;
@@ -25,6 +28,7 @@ from dataclasses import dataclass
 import config
 from compliance.rules import check_compliance
 from exceptions import ComplianceCheckError, KBGapError, KBLoadError
+from flow import memory
 from flow.intents import classify_intent, Intent
 from knowledge.kb_loader import load_kb
 from knowledge.retriever import retrieve
@@ -45,6 +49,9 @@ class TurnResult:
     intent: str
     escalated: bool
     kb_gap: bool
+    # The customer's message as the bot understood it. For a follow-up like
+    # "And if I prepaid?" this is the rewritten, self-contained question.
+    understood_as: str = ""
 
 
 def _get_kb_documents(market: str, supplier: str):
@@ -87,6 +94,7 @@ def handle_message(session_id: str, market: str, supplier: str, user_text: str) 
             intent=result.intent,
             escalated=result.escalated,
             kb_gap=result.kb_gap,
+            understood_as=result.understood_as,
         )
     return result
 
@@ -95,7 +103,15 @@ def _run_turn(session_id: str, market: str, supplier: str, user_text: str) -> Tu
     start_time = time.time()
     kb_gap = False
     escalated = False
-    intent_result = classify_intent(user_text)  # never raises
+    history = memory.recent_turns(session_id)
+
+    # --- Stage 1: understand the message in context -----------------------
+    # A follow-up such as "And if I prepaid?" has no topic of its own, so it
+    # is rewritten into a self-contained question before intent detection
+    # and retrieval. Never raises: if rewriting fails, the message is used
+    # as it is. Its cost is added to the turn's cost below.
+    question, rewrite_response = _standalone_question(session_id, market, supplier, user_text, history)
+    intent_result = classify_intent(question)  # never raises
 
     # --- Stage 2 & 3: compliance check, fail CLOSED ------------------------
     try:
@@ -112,12 +128,16 @@ def _run_turn(session_id: str, market: str, supplier: str, user_text: str) -> Tu
     if escalated:
         bot_text = _escalation_response(market, reason or "compliance escalation")
         final_text = apply_disclosure(session_id, market, bot_text)
+        memory.remember(session_id, user_text, bot_text)
         _log_turn(
             session_id, market, supplier, user_text, final_text, intent_result,
-            kb_gap=False, escalated=True, provider_used=None, model_used=None,
-            tokens_in=0, tokens_out=0, latency=time.time() - start_time, error=reason,
+            kb_gap=False, escalated=True,
+            provider_used=_provider(rewrite_response), model_used=_model(rewrite_response),
+            tokens_in=_tokens_in(rewrite_response), tokens_out=_tokens_out(rewrite_response),
+            latency=time.time() - start_time, error=reason, cost=_cost(rewrite_response),
         )
-        return TurnResult(text=final_text, intent=intent_result.intent.value, escalated=True, kb_gap=False)
+        return TurnResult(text=final_text, intent=intent_result.intent.value, escalated=True,
+                          kb_gap=False, understood_as=question)
 
     # --- Stage 4: retrieve KB context ---------------------------------------
     context_text = ""
@@ -125,7 +145,7 @@ def _run_turn(session_id: str, market: str, supplier: str, user_text: str) -> Tu
     try:
         documents = _get_kb_documents(market, supplier)
         kb_version = documents[0].version
-        results = retrieve(user_text, documents, min_score=config.KB_MATCH_MIN_SCORE)
+        results = retrieve(question, documents, min_score=config.KB_MATCH_MIN_SCORE)
         context_text = "\n\n".join(f"{r.document.heading}: {r.document.content}" for r in results)
     except KBLoadError as e:
         log_error("kb_load", str(e), market=market, session_id=session_id)
@@ -136,7 +156,7 @@ def _run_turn(session_id: str, market: str, supplier: str, user_text: str) -> Tu
         context_text = ""  # signal recorded for analytics; conversation still continues
 
     # --- Stage 5: call the LLM (already retries + falls back internally) ---
-    prompt = _build_prompt(market, supplier, intent_result.intent, user_text, context_text, kb_gap)
+    prompt = _build_prompt(market, supplier, intent_result.intent, user_text, question, history, context_text, kb_gap)
     # `inputs` and record_llm_result() are what make this step readable in
     # LangSmith: without them it only shows a name and a duration.
     with trace_call(
@@ -149,6 +169,7 @@ def _run_turn(session_id: str, market: str, supplier: str, user_text: str) -> Tu
         supplier=supplier,
         kb_version=kb_version,
         user_message=user_text,
+        understood_as=question,
         kb_gap=kb_gap,
     ) as trace:
         llm_response = get_response(prompt)
@@ -166,17 +187,101 @@ def _run_turn(session_id: str, market: str, supplier: str, user_text: str) -> Tu
 
     # --- Stage 6: disclosure + logging --------------------------------------
     final_text = apply_disclosure(session_id, market, llm_response.text)
-    cost = estimate_cost(llm_response.model_used or "mock-model", llm_response.tokens_in, llm_response.tokens_out)
+    memory.remember(session_id, user_text, llm_response.text)
+    # Cost and tokens cover both model calls of the turn: the rewrite (if
+    # there was one) and the answer.
+    cost = _cost(llm_response) + _cost(rewrite_response)
 
     _log_turn(
         session_id, market, supplier, user_text, final_text, intent_result,
         kb_gap=kb_gap, escalated=escalated,
         provider_used=llm_response.provider_used, model_used=llm_response.model_used,
-        tokens_in=llm_response.tokens_in, tokens_out=llm_response.tokens_out,
-        latency=llm_response.latency_seconds, error=llm_response.error, cost=cost,
+        tokens_in=llm_response.tokens_in + _tokens_in(rewrite_response),
+        tokens_out=llm_response.tokens_out + _tokens_out(rewrite_response),
+        latency=time.time() - start_time, error=llm_response.error, cost=cost,
     )
 
-    return TurnResult(text=final_text, intent=intent_result.intent.value, escalated=escalated, kb_gap=kb_gap)
+    return TurnResult(text=final_text, intent=intent_result.intent.value, escalated=escalated,
+                      kb_gap=kb_gap, understood_as=question)
+
+
+# --- Follow-up questions ------------------------------------------------------
+_REWRITE_INSTRUCTIONS = (
+    "You rewrite a customer's latest chat message into one self-contained "
+    "question, so it can be understood without the conversation before it. "
+    "Use the conversation only to fill in what the latest message leaves out "
+    "(for example the topic of a short follow-up). If the latest message is "
+    "already self-contained or starts a new topic, return it unchanged. Keep "
+    "the customer's language. Do not answer the question. Return only the "
+    "question, on one line, without quotes."
+)
+_MAX_REWRITE_LENGTH = 300  # characters; anything longer is not a question
+
+
+def _standalone_question(session_id, market, supplier, user_text, history):
+    """
+    Returns (question, rewrite_response). rewrite_response is the model
+    response used for the rewrite, or None when no rewrite was attempted.
+
+    No history means a first message: nothing to resolve, no model call.
+    When the rewrite fails or returns something that is not a usable
+    question, the original message is used, so a broken rewrite can only
+    make the bot as good as it was without memory, never worse.
+    """
+    if not history:
+        return user_text, None
+
+    prompt = (
+        f"{_REWRITE_INSTRUCTIONS}\n\n"
+        f"Conversation:\n{memory.format_history(history)}\n\n"
+        f"Latest message: {user_text}\n\nSelf-contained question:"
+    )
+    with trace_call(
+        "rewrite_question",
+        market=market,
+        run_type="llm",
+        inputs={"messages": [{"role": "user", "content": prompt}]},
+        session_id=session_id,
+        supplier=supplier,
+    ) as trace:
+        response = get_response(prompt)
+        trace.record_llm_result(
+            text=response.text,
+            provider=response.provider_used,
+            model=response.model_used,
+            tokens_in=response.tokens_in,
+            tokens_out=response.tokens_out,
+            error=response.error,
+        )
+
+    # MockProvider only echoes its prompt, so it cannot rewrite anything.
+    if response.escalate or response.provider_used in (None, "mock"):
+        return user_text, response
+    question = response.text.strip().strip('"\'„“”«»').strip()
+    if not question or "\n" in question or len(question) > _MAX_REWRITE_LENGTH:
+        log_error("rewrite", f"unusable rewrite ignored: {response.text[:80]!r}", market=market, session_id=session_id)
+        return user_text, response
+    return question, response
+
+
+def _cost(r) -> float:
+    return estimate_cost(r.model_used or "mock-model", r.tokens_in, r.tokens_out) if r else 0.0
+
+
+def _tokens_in(r) -> int:
+    return r.tokens_in if r else 0
+
+
+def _tokens_out(r) -> int:
+    return r.tokens_out if r else 0
+
+
+def _provider(r):
+    return r.provider_used if r else None
+
+
+def _model(r):
+    return r.model_used if r else None
 
 
 # Rules sent to the model with every question. Each one states its reason,
@@ -220,7 +325,8 @@ _FORM_OF_ADDRESS = {
 }
 
 
-def _build_prompt(market: str, supplier: str, intent: Intent, user_text: str, context_text: str, kb_gap: bool) -> str:
+def _build_prompt(market: str, supplier: str, intent: Intent, user_text: str, question: str,
+                  history: list, context_text: str, kb_gap: bool) -> str:
     supplier_name = config.SUPPLIER_NAMES.get(supplier, supplier)
     address = _FORM_OF_ADDRESS.get(market, "")
     address = f"\n6. {address}" if address else ""
@@ -234,13 +340,24 @@ def _build_prompt(market: str, supplier: str, intent: Intent, user_text: str, co
     else:
         grounding = f"Use ONLY the following knowledge base context to answer:\n{context_text}"
 
+    # Earlier turns let the model resolve "that", "it" or "and if ...". They
+    # are context only: the facts must still come from the KB context above.
+    conversation = ""
+    if history:
+        conversation = (
+            "Conversation so far (for context only; take facts only from the "
+            f"knowledge base context above):\n{memory.format_history(history)}\n\n"
+        )
+    understood = f"\nUnderstood as: {question}" if question != user_text else ""
+
     # The rules come first and the context + user message stay at the end:
     # MockProvider echoes the tail of the prompt, so this keeps mock replies
     # showing the retrieved context.
     return (
         f"{_REPLY_RULES}{address}\n\n"
         f"Market: {market}\nSupplier: {supplier_name}\nDetected intent: {intent.value}\n{grounding}\n\n"
-        f"User message: {user_text}\n\nRespond helpfully and concisely."
+        f"{conversation}"
+        f"User message: {user_text}{understood}\n\nRespond helpfully and concisely."
     )
 
 
