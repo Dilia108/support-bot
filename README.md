@@ -60,7 +60,8 @@ only the current one.
 
 What happens to each customer message (`flow/flow_engine.py`):
 
-![Conversation flow: from the customer message through follow-up rewriting, intent detection, the compliance check, knowledge base retrieval and the model call to the reply](docs/diagrams/conversation-flow.mmd)
+
+![Conversation flow: from the customer message through follow-up rewriting, intent detection, the compliance check, knowledge base retrieval and the model call to the reply](docs/diagrams/conversation-flow.png)
 
 The diagram's source is [docs/diagrams/conversation-flow.mmd](docs/diagrams/conversation-flow.mmd)
 (Mermaid). To change it, edit the source, paste it into
