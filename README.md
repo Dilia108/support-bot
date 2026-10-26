@@ -83,6 +83,34 @@ The diagram's source is [docs/diagrams/conversation-flow.mmd](docs/diagrams/conv
 (Mermaid). To change it, edit the source, paste it into
 [mermaid.live](https://mermaid.live), and export the PNG over the old one.
 
+## No-code flow in Botpress
+
+The conversation flow is also built in [Botpress](https://botpress.com), a
+visual bot builder. Botpress runs the conversation; the Python bot does the
+answering through the channel API (`bot_api.py`).
+
+![Botpress flow: welcome and country choice, a supplier question per market, starting a session with the Python bot, then a question-and-answer loop with exits for a handoff to a person and for an unreachable bot](docs/diagrams/botpress-flow.png)
+
+| Node | What it does |
+|---|---|
+| `Welcome` | Greets in three languages, says it is an AI assistant, asks for the country |
+| `Supplier_DE` / `_ES` / `_US` | Market branching: asks for the rental supplier in the market's language |
+| `Not_understood` | Any answer that matches no button: asks the customer to pick a button, then starts over |
+| `Start_session` | Code step: opens a session with the Python bot (`POST /v1/sessions`) |
+| `Ask` | Captures the customer's question in the market's language |
+| `Ask_bot` | Code step: sends the question to the Python bot (`POST /v1/chat`) |
+| `Answer` | Shows the bot's reply, then loops back to `Ask` |
+| `Handoff` | Taken when the Python bot escalates (accident, lawsuit, "speak to a human"): closing message, end |
+| `Unavailable` | Taken when the Python bot cannot be reached: apology, end |
+
+The API key and address are Botpress configuration variables (`apiKey`,
+`apiUrl`), so neither appears in the flow itself.
+
+To import the bot into your own Botpress workspace, use the export file
+[`botpress/carrental-support-bot.bpz`](botpress/carrental-support-bot.bpz), set
+`apiKey` and `apiUrl` in the bot settings, and run `bot_api.py` with a tunnel
+as described under [Channel API](#channel-api-for-botpress-and-other-platforms).
+
 ## Rollout
 
 The project was rolled out market by market in a simulation: Germany first,
@@ -140,7 +168,7 @@ don't need to understand LangSmith to review `flow_engine.py`.
 | Requirement | Where it lives |
 |---|---|
 | Market deployment & prioritization | `knowledge_base/{market}/{supplier}/`, `config.SUPPORTED_MARKETS`, `config.SUPPLIER_NAMES` — a new market is a folder, a new supplier is one folder per market plus one line in `config.py` |
-| Feature design & bot behavior | `flow/intents.py` + `flow/flow_engine.py` — the actual conversation logic, readable without touching the LLM layer |
+| Feature design & bot behavior | The Botpress flow (market branching, fallback, handoff and error paths) on top of `flow/intents.py` + `flow/flow_engine.py`, readable without touching the LLM layer |
 | Knowledge base management | `knowledge/kb_loader.py` — plain markdown, one dated file per KB version for each market and supplier; `knowledge_base/CHANGELOG.md` records what changed and why, `knowledge_base/SOURCES.md` the source of every fact |
 | Compliance & localization | `compliance/rules.py` (fail-closed escalation) + `models/disclosure.py` (AI disclosure enforced in code) + per-market tone in `flow_engine._escalation_response` |
 | Performance analytics | `analytics/dashboard.py` — KB gap rate, escalation rate, and cost per market and supplier from real logged data |
@@ -256,6 +284,5 @@ don't need to understand LangSmith to review `flow_engine.py`.
 - Add an entry to each supplier file covering a new topic (pets,
   additional drivers, deposits), then use
   `analytics/dashboard.py`'s gap report to verify the gap disappears.
-- Wire up real Voiceflow/Botpress flows that call into this backend via
-  webhook, so the flow-builder UI and this orchestration logic work
-  together.
+- Publish the Botpress flow as a webchat with the Python bot hosted at a
+  permanent address instead of a tunnel.
