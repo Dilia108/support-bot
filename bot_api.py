@@ -92,6 +92,8 @@ def main() -> None:
         print(f"❌ Startup aborted: {e}")
         sys.exit(1)
     init_db()
+    from knowledge import retrieval
+    print(f"Knowledge search: {retrieval.warm_up()}")
 
     print(f"Channel API: http://127.0.0.1:{config.BOT_API_PORT}/v1   (Ctrl+C to stop)")
     app.run(host="127.0.0.1", port=config.BOT_API_PORT, debug=False)

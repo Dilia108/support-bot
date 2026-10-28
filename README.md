@@ -33,6 +33,10 @@ On startup the bot checks the LangSmith connection and creates the
 answer to most questions depends on both. To use real LLM providers,
 also fill in `OPENAI_API_KEY` and/or `ANTHROPIC_API_KEY` in `.env`.
 
+The first start also downloads the embedding model for knowledge search
+(about 220 MB, once, into `.model_cache/`, which is not committed). To compare the two retrievers on the labelled
+question set: `python tests/evaluate_retrieval.py`.
+
 ### Web chat
 
 The same bot is also available as a chat page in the browser:
@@ -140,7 +144,12 @@ support-bot/
 │   └── disclosure.py         # enforces "I'm an AI" in code, not just a prompt
 ├── knowledge/
 │   ├── kb_loader.py           # loads the KB version in effect for one market + supplier
-│   └── retriever.py            # weighted keyword retrieval + KB-gap detection
+│   ├── retrieval.py            # picks the retriever; falls back to keywords if vector search fails
+│   ├── vector_retriever.py     # LangChain + Chroma + local multilingual embeddings
+│   └── retriever.py            # weighted keyword retrieval (fallback) + KB-gap detection
+├── tests/
+│   ├── retrieval_questions.py   # labelled questions per market, incl. held-out phrasings and gaps
+│   └── evaluate_retrieval.py    # keyword vs. vector accuracy + threshold sweep
 ├── flow/
 │   ├── intents.py               # rule-based intent classification
 │   ├── flow_engine.py            # orchestrates one full conversation turn; builds the prompt
@@ -244,7 +253,41 @@ don't need to understand LangSmith to review `flow_engine.py`.
   `market:<market>` and `supplier:<supplier>`, plus `escalated` and `kb_gap`
   where they apply, so
   each can be filtered in LangSmith.
-- **Keyword retrieval that knows its limits.** `knowledge/retriever.py`
+- **Hybrid retrieval: keywords first, LangChain + Chroma for the rest.**
+  `knowledge/vector_retriever.py` turns each FAQ entry into embeddings with
+  a local multilingual model (FastEmbed, no API key, no cost per question)
+  and stores them in a Chroma collection per market + supplier + KB
+  version, so a SIXT question can never match an Avis entry and a new
+  dated KB file gets a fresh index. Each entry gets a vector for its
+  heading and one for heading + text; the better match counts, because a
+  long entry mixes several subjects and blurs its vector.
+  The decision to go hybrid came from measuring, not from assumption.
+  `tests/evaluate_retrieval.py` runs 51 labelled questions (DE/ES/US)
+  against all three suppliers: tuned-on phrasings, *held-out* phrasings
+  the keyword rules were never tuned on, and questions the FAQ does not
+  answer. Results (153 checks):
+
+  | Variant | Correct | Held-out | Gaps kept | Wrong entry |
+  |---|---|---|---|---|
+  | Keyword only | 116 (76%) | 33/69 | 38/39 | 19 |
+  | Vector only (best threshold 0.40) | 119 (78%) | 44/69 | 32/39 | 30 |
+  | **Hybrid (threshold 0.55)** | **124 (81%)** | **41/69** | **38/39** | 22 |
+
+  Vector search alone handled rephrasings far better ("Ich stehe im
+  Stau…" finds *Verspätete Rückgabe* without a shared word) but confused
+  neighbouring topics (*cancel* vs. *change* a booking) and answered
+  questions the FAQ doesn't cover. Keyword matching is the opposite. In
+  hybrid mode the keyword matcher answers when it is sure, and the vector
+  search decides only when it finds nothing. 0.55 sits on a plateau
+  (124/123 correct at 0.55/0.60) rather than a single peak, so small
+  differences in wording don't flip results; it keeps every gap the
+  keyword matcher keeps. Each turn's LangSmith trace records the
+  retrieval mode and the scores.
+- **Retrieval never breaks a conversation.** `knowledge/retrieval.py`
+  loads the model at startup (the startup line says which search is
+  active). If the packages are missing or the model can't be downloaded,
+  it logs the reason and uses keyword matching instead.
+- **Keyword retrieval that knows its limits (fallback).** `knowledge/retriever.py`
   scores FAQ entries by shared words, with six rules that each fix a wrong
   answer seen in testing: accents are folded ("devolucion" = "devolución"),
   synonyms map customer words to the FAQ's words ("estatus" → "estado"),
@@ -269,15 +312,18 @@ don't need to understand LangSmith to review `flow_engine.py`.
 
 ## Known limitations (intentional, for a learning project)
 
-- Intent classification and KB retrieval are keyword-based, not
-  embeddings/ML-based — this keeps the project dependency-free and easy
-  to review, but a production system would swap `knowledge/retriever.py`
-  for a real vector store (the module docstring explains exactly what to
-  change). Two consequences today: synonyms must be added by hand to
-  `_SYNONYMS` when the gap report shows a question the FAQ does answer,
-  and a question on another topic that happens to contain one
-  FAQ-specific word still matches that entry without being recorded as a
-  gap.
+- Intent classification is still keyword-based. In hybrid mode the
+  keyword matcher goes first, so its confident mistakes are not corrected
+  ("Is my reservation confirmed?" matches *Cancel a booking* through the
+  word "reservation"). Some questions are ambiguous by nature ("pick up
+  the car a day later" is a *change*, but sounds like a *late return*).
+- The evaluation set is small (51 questions), and the variant and
+  threshold were chosen on it, so the numbers are optimistic. New
+  real questions from the gap report should be added to it before
+  changing the settings again. One threshold serves all three languages.
+- Vector indexes are rebuilt in memory at every start. With four entries
+  per supplier that takes under a second; a large KB would use a
+  persistent Chroma directory.
 - Session state (`models/disclosure.py`, `flow/memory.py`) is in-memory
   and resets on restart — fine for a demo, would move to Redis/a DB in production.
 

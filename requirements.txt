@@ -7,6 +7,8 @@ flask>=3.0.0             # web chat page (web_app.py); not needed for the termin
 openai>=1.30.0          # needed only if OPENAI_API_KEY is set
 anthropic>=0.34.0        # needed only if ANTHROPIC_API_KEY is set
 
-# --- Future upgrade path for knowledge/retriever.py (optional) ---
-# langchain>=0.2.0
-# chromadb>=0.5.0
+# --- Knowledge search by meaning (knowledge/vector_retriever.py) ---
+# Without these the bot falls back to keyword matching automatically.
+langchain-core>=0.3.0        # Embeddings and Document interfaces
+langchain-chroma>=0.2.0      # Chroma vector store for LangChain
+fastembed>=0.4.0             # local multilingual embedding model, no API key

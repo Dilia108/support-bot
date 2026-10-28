@@ -3,17 +3,14 @@ knowledge/retriever.py
 
 Responsibility: find the KB document(s) most relevant to a user's message.
 
-This uses simple word-overlap scoring on purpose -- zero extra dependencies,
-zero API calls, runs instantly offline, and is easy for a reviewer to read
-top to bottom. It is intentionally written so the scoring function is the
-ONLY thing you'd swap out to upgrade to real embeddings:
-
-    LangChain + a vector store (Chroma/FAISS) upgrade path:
-      1. Replace `_score` with a call to an embeddings model.
-      2. Replace the linear scan in `retrieve` with a vector similarity
-         search (e.g. `vectorstore.similarity_search_with_score(query)`).
-      3. Everything else (KBGapError handling, thresholding, callers)
-         stays exactly the same.
+Since the LangChain upgrade this is the FALLBACK retriever: the default is
+knowledge/vector_retriever.py (LangChain + Chroma, matching by meaning), and
+knowledge/retrieval.py switches to this file when the vector search cannot
+run, or when SUPPORT_BOT_RETRIEVER=keyword. It uses simple word-overlap
+scoring on purpose -- zero extra dependencies, zero API calls, runs
+instantly offline, and is easy for a reviewer to read top to bottom. Both
+retrievers share one contract (RetrievalResult list or KBGapError), so the
+callers never need to know which one answered.
 
 Six rules keep word overlap honest (each one fixes a real wrong answer):
   1. Accents are folded, so "devolución", "devolucion" and "DEVOLUCIÓN"

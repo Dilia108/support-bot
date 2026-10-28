@@ -33,7 +33,7 @@ from exceptions import ComplianceCheckError, KBGapError, KBLoadError
 from flow import memory
 from flow.intents import classify_intent, Intent
 from knowledge.kb_loader import load_kb
-from knowledge.retriever import retrieve
+from knowledge import retrieval
 from models.disclosure import apply_disclosure
 from models.llm_client import get_response
 from observability.logger import ConversationLogEntry, log_conversation, log_error
@@ -154,10 +154,12 @@ def _run_turn(session_id: str, market: str, supplier: str, user_text: str) -> Tu
     # --- Stage 4: retrieve KB context ---------------------------------------
     context_text = ""
     kb_version = ""  # which dated KB file answered; recorded on the trace
+    kb_scores: list = []  # similarity of the entries handed to the model
     try:
         documents = _get_kb_documents(market, supplier)
         kb_version = documents[0].version
-        results = retrieve(question, documents, min_score=config.KB_MATCH_MIN_SCORE)
+        results = retrieval.retrieve(question, documents)
+        kb_scores = [r.score for r in results]
         context_text = "\n\n".join(f"{r.document.heading}: {r.document.content}" for r in results)
     except KBLoadError as e:
         log_error("kb_load", str(e), market=market, session_id=session_id)
@@ -180,6 +182,8 @@ def _run_turn(session_id: str, market: str, supplier: str, user_text: str) -> Tu
         session_id=session_id,
         supplier=supplier,
         kb_version=kb_version,
+        retriever=retrieval.active_retriever(),
+        kb_scores=kb_scores,
         user_message=user_text,
         understood_as=question,
         kb_gap=kb_gap,

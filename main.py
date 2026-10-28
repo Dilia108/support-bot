@@ -49,6 +49,8 @@ def main() -> None:
         sys.exit(1)
 
     init_db()
+    from knowledge import retrieval
+    print(f"Knowledge search: {retrieval.warm_up()}")
     market = choose_market()
     # Answers depend on the supplier as well as the market. A real system
     # would read the supplier from the booking number instead of asking.

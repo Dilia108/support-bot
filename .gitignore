@@ -1,3 +1,4 @@
+# Secrets: never commit the real .env. The template IS committed.
 .env
 .env.*
 !.env.example
@@ -6,6 +7,9 @@
 # Python caches
 __pycache__/
 *.pyc
+
+# Downloaded embedding model (about 220 MB, re-downloaded when missing)
+.model_cache/
 
 # Local runtime data (conversation logs)
 support_bot.db

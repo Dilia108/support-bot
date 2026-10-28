@@ -108,4 +108,25 @@ ESCALATION_KEYWORDS = [
     "demanda", "accidente", "indemnizacion",  # ES
 ]
 
+# --- Knowledge base retrieval -----------------------------------------------
+# "vector": LangChain + Chroma, matching by meaning (default).
+# "keyword": the original word-overlap matcher, no downloads needed.
+# If "vector" cannot run, the bot falls back to "keyword" automatically.
+# hybrid / vector / keyword -- see knowledge/retrieval.py. Defaults chosen with
+# tests/evaluate_retrieval.py (results in the README).
+RETRIEVER = os.getenv("SUPPORT_BOT_RETRIEVER", "hybrid").lower()
+
+# Multilingual embedding model, run locally by FastEmbed (downloaded once).
+EMBEDDING_MODEL = os.getenv(
+    "SUPPORT_BOT_EMBEDDING_MODEL", "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
+)
+# Minimum similarity (0-1) for an entry to count as an answer; below it the
+# question is recorded as a knowledge gap. Calibrated on the test questions
+# in tests/retrieval_questions.py.
+# "full": score = similarity to heading + text. "max": the better of that and
+# the similarity to the heading alone. Chosen with tests/evaluate_retrieval.py.
+VECTOR_SCORING = os.getenv("SUPPORT_BOT_VECTOR_SCORING", "max").lower()
+VECTOR_MIN_SCORE = float(os.getenv("SUPPORT_BOT_VECTOR_MIN_SCORE", "0.55"))
+
+# Threshold for the keyword retriever (share of recognised words).
 KB_MATCH_MIN_SCORE = float(os.getenv("KB_MATCH_MIN_SCORE", "0.15"))
