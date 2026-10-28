@@ -9,12 +9,14 @@ its own try/except with an explicit, documented fallback. Nothing here
 should ever raise an unhandled exception back to main.py.
 
 Stage order:
-  1. Understand the message     (a follow-up is rewritten into a self-contained
-                                 question using the last turns; on any
-                                 failure the message is used as it is),
-     then classify intent       (never raises -- worst case UNKNOWN)
-  2. Compliance check           (fail CLOSED -> escalate on error)
-  3. Escalate early if required (skip KB + LLM entirely, cheaper + safer)
+  1. Classify intent            (never raises -- worst case UNKNOWN)
+  2. Compliance check           (on the customer's own words; fail CLOSED
+                                 -> escalate on error)
+  3. Escalate early if required (skip rewrite, KB + LLM entirely)
+     otherwise understand the message in context (a follow-up is
+                                 rewritten into a self-contained question
+                                 using the last turns; on any failure the
+                                 message is used as it is)
   4. Retrieve KB context        (from the customer's supplier only;
                                  KBGapError / KBLoadError -> generic fallback)
   5. Call the LLM               (llm_client already retries + falls back)
@@ -105,20 +107,11 @@ def _run_turn(session_id: str, market: str, supplier: str, user_text: str) -> Tu
     escalated = False
     history = memory.recent_turns(session_id)
 
-    # --- Stage 1: understand the message in context -----------------------
-    # A follow-up such as "And if I prepaid?" has no topic of its own, so it
-    # is rewritten into a self-contained question before intent detection
-    # and retrieval. Never raises: if rewriting fails, the message is used
-    # as it is. Its cost is added to the turn's cost below.
-    question, rewrite_response = _standalone_question(session_id, market, supplier, user_text, history)
-    # Two intents: the compliance check must judge what the customer actually
-    # wrote, because a rewrite could reword "I want to speak to a human" and
-    # lose the escalation. The rewritten question gives the better topic for
-    # analytics, unless the customer's own words already ask for a person.
+    # The compliance check always judges what the customer actually wrote,
+    # so it runs on the customer's own words and their own intent.
     own_intent = classify_intent(user_text)  # never raises
     intent_result = own_intent
-    if question != user_text and own_intent.intent != Intent.ESCALATE:
-        intent_result = classify_intent(question)
+    question, rewrite_response = user_text, None
 
     # --- Stage 2 & 3: compliance check, fail CLOSED ------------------------
     try:
@@ -131,6 +124,18 @@ def _run_turn(session_id: str, market: str, supplier: str, user_text: str) -> Tu
     else:
         escalated = compliance_result.escalate
         reason = compliance_result.reason
+
+    # --- Understand the message in context (turns that are not escalated) --
+    # A follow-up such as "And if I prepaid?" has no topic of its own, so it
+    # is rewritten into a self-contained question before intent detection
+    # and retrieval. Skipped for escalated turns: they need no answer, and a
+    # rewrite would only blend the escalation into the previous topic.
+    # Never raises: if rewriting fails, the message is used as it is. Its
+    # cost is added to the turn's cost below.
+    if not escalated:
+        question, rewrite_response = _standalone_question(session_id, market, supplier, user_text, history)
+        if question != user_text:
+            intent_result = classify_intent(question)
 
     if escalated:
         bot_text = _escalation_response(market, reason or "compliance escalation")
@@ -215,12 +220,21 @@ def _run_turn(session_id: str, market: str, supplier: str, user_text: str) -> Tu
 # --- Follow-up questions ------------------------------------------------------
 _REWRITE_INSTRUCTIONS = (
     "You rewrite a customer's latest chat message into one self-contained "
-    "question, so it can be understood without the conversation before it. "
-    "Use the conversation only to fill in what the latest message leaves out "
-    "(for example the topic of a short follow-up). If the latest message is "
-    "already self-contained or starts a new topic, return it unchanged. Keep "
-    "the customer's language. Do not answer the question. Return only the "
-    "question, on one line, without quotes."
+    "question, so it can be understood without the conversation before it.\n"
+    "Most messages already name their own subject, for example a pet, an "
+    "accident, a payment or a change to the booking. Those start a new topic: "
+    "return them exactly as written and add nothing from earlier messages, "
+    "because mixing two topics changes what the customer asked.\n"
+    "Only a message that cannot be understood on its own, because it leaves "
+    "out its subject, takes the subject from the conversation. Examples:\n"
+    "- After a question about cancelling: 'And if I prepaid?' becomes "
+    "'How do I cancel my booking if I prepaid?'\n"
+    "- After a question about a late return: 'Und bei zwei Stunden?' becomes "
+    "'Was passiert, wenn ich das Auto zwei Stunden zu spät zurückgebe?'\n"
+    "- After a question about cancelling: '¿Puedo llevar a mi perro?' stays "
+    "'¿Puedo llevar a mi perro?'\n"
+    "Keep the customer's language. Do not answer the question. Return only "
+    "the question, on one line, without quotes."
 )
 _MAX_REWRITE_LENGTH = 300  # characters; anything longer is not a question
 

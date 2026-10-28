@@ -1,9 +1,13 @@
 # Multi-Market Rental Support Bot
 
-A modular, production-minded chatbot flow for a fictional international
-rental/mobility company, built to practice the skills behind an
+A modular, production-minded support chatbot for an international car
+rental broker. It answers in three markets (Germany, Spain, US) and for three
+suppliers (Avis, SIXT, Enterprise), from knowledge bases built on the
+suppliers' published policies. Built to practice the skills behind an
 "AI Bot Consultant" role: market rollout, bot behavior design, localized
 knowledge base management, compliance, and performance analytics.
+
+![Demo: a cancellation question answered from the Enterprise Germany policy, a follow-up understood in context, a question the knowledge base cannot answer, and an accident report handed over to a person](docs/demo.gif)
 
 Runs with **zero LLM API keys** (uses a deterministic `MockProvider`),
 so the conversation logic can be tried without paying for a model. Real
