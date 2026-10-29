@@ -40,6 +40,8 @@ class ConversationLogEntry:
     estimated_cost_usd: float
     latency_seconds: float
     error: Optional[str]
+    # Id of the turn's LangSmith trace, so the dashboard can link to it.
+    trace_id: Optional[str] = None
 
 
 def init_db(db_path: str = config.DB_PATH) -> None:
@@ -74,6 +76,9 @@ def init_db(db_path: str = config.DB_PATH) -> None:
         columns = {row[1] for row in conn.execute("PRAGMA table_info(conversation_log)")}
         if "supplier" not in columns:
             conn.execute("ALTER TABLE conversation_log ADD COLUMN supplier TEXT")
+        # Same for the LangSmith trace id, added with the dashboard links.
+        if "trace_id" not in columns:
+            conn.execute("ALTER TABLE conversation_log ADD COLUMN trace_id TEXT")
         conn.commit()
         conn.close()
     except sqlite3.Error as e:
@@ -101,15 +106,15 @@ def log_conversation(entry: ConversationLogEntry, db_path: str = config.DB_PATH)
             INSERT INTO conversation_log (
                 timestamp, session_id, market, supplier, user_text, bot_text, intent,
                 intent_confidence, kb_gap, escalated, provider_used, model_used,
-                tokens_in, tokens_out, estimated_cost_usd, latency_seconds, error
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                tokens_in, tokens_out, estimated_cost_usd, latency_seconds, error, trace_id
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 entry.timestamp, entry.session_id, entry.market, entry.supplier,
                 entry.user_text, entry.bot_text, entry.intent, entry.intent_confidence, int(entry.kb_gap),
                 int(entry.escalated), entry.provider_used, entry.model_used,
                 entry.tokens_in, entry.tokens_out, entry.estimated_cost_usd,
-                entry.latency_seconds, entry.error,
+                entry.latency_seconds, entry.error, entry.trace_id,
             ),
         )
         conn.commit()

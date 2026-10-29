@@ -139,6 +139,7 @@ def trace_call(
     market: str,
     inputs: Optional[dict[str, Any]] = None,
     run_type: str = "chain",
+    run_id: Optional[str] = None,
     **metadata,
 ) -> Iterator[TraceHandle]:
     """
@@ -166,6 +167,9 @@ def trace_call(
 
     Errors raised by the code INSIDE the block are recorded on the trace
     and then re-raised unchanged, so callers see their own exception.
+
+    run_id: optional id for the trace, chosen by the caller so it can also
+    be stored in the conversation log (the dashboard links to it).
     """
     handle = TraceHandle(name=name, market=market, start_time=time.monotonic(), metadata=metadata)
 
@@ -183,6 +187,7 @@ def trace_call(
             tags=[f"market:{market}"],
             metadata={"market": market, **metadata},
             client=client,
+            run_id=run_id,
         )
         run_tree = run.__enter__()
     except Exception as e:  # noqa: BLE001 -- backend problem, not a caller bug
@@ -232,6 +237,37 @@ def _close(run, name: str, exc_type, exc, tb) -> None:
         run.__exit__(exc_type, exc, tb)
     except Exception as e:  # noqa: BLE001
         logger.warning("LangSmith trace '%s' could not be closed: %s", name, e)
+
+
+_RUN_URL_TEMPLATE: Optional[str] = None
+
+
+def run_url_template() -> Optional[str]:
+    """
+    The LangSmith web address of a trace in this project, with "{run_id}" as
+    a placeholder, e.g. https://eu.smith.langchain.com/o/<org>/projects/p/<project>/r/{run_id}?poll=true
+    Asks LangSmith once per process. Returns None if that fails: the
+    dashboard then shows no links, but works otherwise.
+    """
+    global _RUN_URL_TEMPLATE
+    if _RUN_URL_TEMPLATE is not None:
+        return _RUN_URL_TEMPLATE
+    try:
+        import types
+        import warnings
+
+        client = _get_client()
+        project = client.read_project(project_name=config.LANGSMITH_PROJECT)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")  # get_run_url is marked deprecated in newer SDKs
+            url = client.get_run_url(run=types.SimpleNamespace(id="RUNID"), project_id=project.id)
+        if "RUNID" not in url:
+            return None
+        _RUN_URL_TEMPLATE = url.replace("RUNID", "{run_id}")
+    except Exception as e:  # noqa: BLE001
+        logger.warning("LangSmith trace links unavailable: %s", e)
+        return None
+    return _RUN_URL_TEMPLATE
 
 
 def estimate_cost(model_name: str, tokens_in: int, tokens_out: int) -> float:

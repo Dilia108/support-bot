@@ -101,6 +101,11 @@ AI_DISCLOSURE_TEXT = {
 
 # Topics that must always be escalated to a human, regardless of KB content.
 # Kept simple/keyword-based here; swap for an LLM-based classifier later if needed.
+# After this many questions in a row that the knowledge base cannot answer,
+# the conversation is handed to a person instead of answering "I don't know"
+# again. 2 is common for chat; voice bots often allow 3.
+MAX_CONSECUTIVE_GAPS = int(os.getenv("SUPPORT_BOT_MAX_CONSECUTIVE_GAPS", "2"))
+
 ESCALATION_KEYWORDS = [
     "lawsuit", "legal action", "sue", "compensation claim",
     "accident", "injury", "insurance claim", "refund guarantee",

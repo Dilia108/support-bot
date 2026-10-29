@@ -57,6 +57,42 @@ connection would be another front door on the same `/api/chat` endpoint.
 This is a local demo server with no login and no rate limit, so it listens
 on 127.0.0.1 only.
 
+### Analytics dashboard
+
+While `web_app.py` runs, http://127.0.0.1:5000/dashboard shows what the
+conversation log says. The filters above the charts (period or your own
+dates, market, supplier) apply to the whole page; the unanswered-questions
+table also has a search, "only handed to a person" / "only asked more than
+once" toggles and sortable columns:
+
+![Analytics dashboard: fallback and escalation rates per market and supplier, and the unanswered questions with next steps](docs/dashboard.png)
+
+- **Resolved by the bot, fallback rate, escalation rate** as totals, and the
+  fallback and escalation rates per market and supplier. Each bar shows the
+  count next to the rate (`3/7`), so a rate built on a few turns is not
+  mistaken for a trend.
+- **Unanswered questions**: identical questions are counted together per
+  market, with the suppliers they were asked for and a **next step**. One
+  supplier: research that supplier's policy and add a new dated KB file. Several
+  suppliers: the topic is missing from the market, to be researched per
+  supplier, because their policies differ. After the new KB file is live,
+  the question disappears from the list, which closes the loop shown in
+  the improvement-loop diagram.
+- **Business analytics here, engineering observability in LangSmith,
+  linked.** Every turn's LangSmith trace id is stored in the log, so each
+  unanswered question links to its latest trace ("Why?"), which shows the
+  question as the bot understood it, the retrieval scores and the prompt.
+  The header links to the project's trace list. If LangSmith can't be
+  reached, the dashboard works the same without the links. The SQLite log
+  stays the source for the numbers: it is kept as long as needed and is
+  written even when a trace fails.
+
+  ![LangSmith trace of an unanswered question: the conversation turn with the follow-up rewrite and the model call inside, tagged kb_gap, with the retrieval mode and scores in the metadata](docs/langsmith-trace.png)
+- The numbers come from `analytics/dashboard.py`'s `collect()`, which also
+  prints the same report in the terminal (`python analytics/dashboard.py`).
+  The dashboard is only on the local web app, never on the channel API,
+  because it shows what customers wrote.
+
 ### Channel API (for Botpress and other platforms)
 
 Chat platforms run in the cloud and call the bot over the internet, so they
@@ -138,7 +174,8 @@ support-bot/
 ├── web_app.py              # web entry point: small Flask service + chat page
 ├── bot_api.py              # channel API for chat platforms (key-protected)
 ├── web/
-│   └── index.html           # the chat page (HTML, CSS and JS in one file)
+│   ├── index.html           # the chat page (HTML, CSS and JS in one file)
+│   └── dashboard.html       # analytics charts + unanswered questions
 ├── models/
 │   ├── llm_client.py        # provider chain + retry + fallback + graceful degrade
 │   └── disclosure.py         # enforces "I'm an AI" in code, not just a prompt
@@ -161,7 +198,7 @@ support-bot/
 │   ├── tracing.py                  # one LangSmith trace per turn (always on)
 │   └── logger.py                    # SQLite logging with flat-file fallback
 ├── analytics/
-│   └── dashboard.py                  # reads the log, reports gaps/cost/escalations
+│   └── dashboard.py                  # reads the log: rates, unanswered questions, next steps
 └── knowledge_base/
     ├── CHANGELOG.md                  # what changed in each KB version, and why
     ├── SOURCES.md                    # where every FAQ fact comes from, and known gaps
@@ -184,7 +221,7 @@ don't need to understand LangSmith to review `flow_engine.py`.
 | Feature design & bot behavior | The Botpress flow (market branching, fallback, handoff and error paths) on top of `flow/intents.py` + `flow/flow_engine.py`, readable without touching the LLM layer |
 | Knowledge base management | `knowledge/kb_loader.py` — plain markdown, one dated file per KB version for each market and supplier; `knowledge_base/CHANGELOG.md` records what changed and why, `knowledge_base/SOURCES.md` the source of every fact |
 | Compliance & localization | `compliance/rules.py` (fail-closed escalation) + `models/disclosure.py` (AI disclosure enforced in code) + per-market tone in `flow_engine._escalation_response` |
-| Performance analytics | `analytics/dashboard.py` — KB gap rate, escalation rate, and cost per market and supplier from real logged data |
+| Performance analytics | `/dashboard` + `analytics/dashboard.py` — fallback, escalation and resolution rates per market and supplier, and the unanswered questions with a next step for each, from real logged data |
 
 ## Design decisions worth explaining in an interview
 
@@ -209,6 +246,15 @@ don't need to understand LangSmith to review `flow_engine.py`.
   explicitly (`KBGapError`) and surfaced in the analytics report as a
   candidate for a new KB entry — this is what "identify knowledge gaps"
   actually looks like in code.
+- **Two unanswered questions in a row → a person.** The first question the
+  knowledge base can't answer gets an honest "I don't have that
+  information". If the next one can't be answered either, the bot hands
+  over instead of repeating itself (`SUPPORT_BOT_MAX_CONSECUTIVE_GAPS`,
+  default 2, common for chat; voice bots often allow 3). An answered
+  question resets the count. The turn is logged as both a gap and an
+  escalation, and skips the model call. Because the rule lives in the
+  Python bot, the web chat and Botpress behave the same without changes
+  to the flow.
 - **Tracing is mandatory and fails fast.** `observability/langsmith_setup.py`
   verifies the key and endpoint at startup and creates the project if it
   doesn't exist; a missing key, missing SDK, or rejected login stops the

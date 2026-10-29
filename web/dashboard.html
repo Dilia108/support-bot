@@ -1,0 +1,567 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Support analytics</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Overpass:wght@400;600;800&display=swap" rel="stylesheet">
+<style>
+  /* Same road palette as the chat page. The bars use one validated blue
+     (checked for contrast on both surfaces); text never takes the bar colour. */
+  :root {
+    color-scheme: light;
+    --paper: #f6f8f9;
+    --mist: #e2e9ed;
+    --surface: #ffffff;
+    --ink: #12303a;
+    --muted: #4f6a73;
+    --lane: #f2c230;
+    --grid: #e6ecef;
+    --bar: #2a78d6;
+    --bar-hover: #256abf;
+    --radius: 10px;
+    --font: "Overpass", "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --paper: #0f1d22;
+      --mist: #2a3d44;
+      --surface: #1b2a30;
+      --ink: #eef3f5;
+      --muted: #a9bcc3;
+      --grid: #2a3a40;
+      --bar: #3987e5;
+      --bar-hover: #5598e7;
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --paper: #0f1d22;
+    --mist: #2a3d44;
+    --surface: #1b2a30;
+    --ink: #eef3f5;
+    --muted: #a9bcc3;
+    --grid: #2a3a40;
+    --bar: #3987e5;
+    --bar-hover: #5598e7;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--font);
+    font-size: 1rem;
+    line-height: 1.5;
+  }
+  :focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; box-shadow: 0 0 0 5px var(--lane); }
+  .page { max-width: 1180px; margin: 0 auto; padding: 40px 32px 64px; }
+
+  header { display: flex; flex-wrap: wrap; align-items: end; justify-content: space-between; gap: 16px;
+           padding-bottom: 20px; border-bottom: 4px dashed var(--lane); }
+  h1 { margin: 0; font-size: 2rem; font-weight: 800; line-height: 1.15; letter-spacing: -0.01em; }
+  header p { margin: 6px 0 0; color: var(--muted); max-width: 60ch; }
+  a { color: var(--ink); font-weight: 600; }
+  .links { display: flex; gap: 20px; flex-wrap: wrap; }
+  .trace-link { display: inline-block; margin-top: 4px; font-size: 0.85rem; }
+  .dates { display: flex; flex-wrap: wrap; gap: 8px 12px; margin-top: 8px; font-size: 0.9rem; font-weight: 600; }
+  .dates input, .search input {
+    font: inherit; font-weight: 400; color: var(--ink); background: var(--surface);
+    border: 2px solid var(--mist); border-radius: 8px; padding: 4px 8px; margin-left: 4px;
+  }
+  .table-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 20px; margin: 4px 0 8px; }
+  .search input { margin-left: 0; width: min(320px, 100%); }
+  .check { display: inline-flex; gap: 6px; align-items: center; font-size: 0.9rem; cursor: pointer; }
+  .check input { width: 16px; height: 16px; accent-color: var(--ink); margin: 0; }
+  .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  th button.sort { all: unset; cursor: pointer; color: var(--muted); font-weight: 600; }
+  th button.sort:hover { color: var(--ink); text-decoration: underline; }
+  th button.sort:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+  th[aria-sort="ascending"] button.sort, th[aria-sort="descending"] button.sort { color: var(--ink); }
+  mark { background: var(--lane); color: #12303a; border-radius: 2px; }
+
+  /* ---------- Filters: one row, above everything they scope ---------- */
+  .filters { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 12px 28px; margin: 24px 0 8px; }
+  .filters > .quiet { align-self: flex-end; }
+  fieldset { border: 0; margin: 0; padding: 0; min-width: 0; }
+  legend { padding: 0; margin-bottom: 6px; font-weight: 600; font-size: 0.9rem; }
+  .choices { display: flex; flex-wrap: wrap; gap: 6px; }
+  .choices label { position: relative; cursor: pointer; }
+  .choices input { position: absolute; opacity: 0; inset: 0; cursor: pointer; }
+  .choices span { display: block; padding: 6px 12px 4px; border: 2px solid var(--mist); border-radius: 999px;
+                  background: var(--surface); font-weight: 600; font-size: 0.9rem; }
+  .choices input:checked + span { background: var(--ink); border-color: var(--ink); color: var(--paper); }
+  .choices input:focus-visible + span { outline: 2px solid var(--ink); outline-offset: 2px; box-shadow: 0 0 0 5px var(--lane); }
+  .quiet { font: inherit; font-weight: 600; font-size: 0.9rem; padding: 6px 14px 4px; border: 2px solid var(--ink);
+           border-radius: 999px; background: transparent; color: var(--ink); cursor: pointer; }
+  .quiet:hover { background: var(--ink); color: var(--paper); }
+
+  main.loading section { opacity: 0.55; transition: opacity 0.15s; }
+
+  /* ---------- Stat tiles ---------- */
+  .tiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; margin-top: 20px; }
+  .tile { background: var(--surface); border: 2px solid var(--mist); border-radius: var(--radius); padding: 16px 18px; }
+  .tile .label { color: var(--muted); font-size: 0.9rem; font-weight: 600; }
+  .tile .value { font-size: 1.9rem; font-weight: 600; line-height: 1.2; margin-top: 4px; font-variant-numeric: tabular-nums; }
+  .tile .detail { color: var(--muted); font-size: 0.85rem; }
+
+  /* ---------- Charts ---------- */
+  .charts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin-top: 16px; }
+  .card { background: var(--surface); border: 2px solid var(--mist); border-radius: var(--radius); padding: 18px 20px 16px; min-width: 0; }
+  .card h2 { margin: 0; font-size: 1.1rem; font-weight: 800; }
+  .card .sub { margin: 2px 0 12px; color: var(--muted); font-size: 0.9rem; }
+  .chart svg { display: block; width: 100%; height: auto; overflow: visible; }
+  @media (max-width: 400px) { .chart text { font-size: 12px; } }
+  .chart text { font-family: var(--font); fill: var(--ink); font-size: 13px; }
+  .chart .axis text { fill: var(--muted); font-size: 12px; }
+  .chart .gridline { stroke: var(--grid); stroke-width: 1; }
+  .chart .baseline { stroke: var(--muted); stroke-width: 1; }
+  .chart .bar { fill: var(--bar); }
+  .chart .hit { fill: transparent; cursor: default; }
+  .chart .hit:focus { outline: none; }
+  .chart g.row:hover .bar, .chart g.row:focus-within .bar { fill: var(--bar-hover); }
+  .chart g.row:focus-within .rowlabel { text-decoration: underline; }
+  .chart .value-label { font-variant-numeric: tabular-nums; }
+  .chart .value-label .count { fill: var(--muted); }
+
+  .tooltip { position: fixed; pointer-events: none; z-index: 10; background: var(--surface); color: var(--ink);
+             border: 1px solid var(--mist); border-radius: 8px; padding: 8px 10px; font-size: 0.85rem;
+             box-shadow: 0 4px 14px rgba(0, 0, 0, 0.12); display: none; }
+  .tooltip strong { display: block; font-size: 1rem; font-variant-numeric: tabular-nums; }
+  .tooltip .key { display: inline-block; width: 12px; height: 2px; background: var(--bar); vertical-align: middle; margin-right: 6px; }
+
+  details { margin-top: 12px; }
+  summary { cursor: pointer; font-weight: 600; }
+
+  /* ---------- Tables ---------- */
+  .table-wrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 0.92rem; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--grid); vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; font-size: 0.85rem; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .unanswered { margin-top: 16px; }
+  .unanswered td:first-child { min-width: 18ch; font-weight: 600; }
+  .unanswered .next { color: var(--muted); font-size: 0.85rem; display: block; min-width: 24ch; }
+  .tags { display: flex; flex-wrap: wrap; gap: 4px; }
+  .tag { display: inline-block; padding: 0 8px; border-radius: 999px; background: var(--paper); border: 1px solid var(--mist);
+         font-size: 0.8rem; font-weight: 600; white-space: nowrap; }
+
+  .empty { padding: 32px 0; color: var(--muted); }
+  .error { color: #b93a2b; font-weight: 600; }
+
+  @media (max-width: 900px) {
+    .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .charts { grid-template-columns: 1fr; }
+  }
+  @media (max-width: 520px) {
+    .page { padding: 24px 16px 48px; }
+    h1 { font-size: 1.6rem; }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+  <header>
+    <div>
+      <h1>Support analytics</h1>
+      <p>How often the bot couldn't answer from the knowledge base, how often it handed a chat to a person,
+         and which questions are still unanswered. Read from the local conversation log.</p>
+    </div>
+    <nav class="links">
+      <a href="/">Back to the chat</a>
+      <a id="langsmith-link" href="#" target="_blank" rel="noopener" hidden>Traces in LangSmith</a>
+    </nav>
+  </header>
+
+  <div class="filters" role="group" aria-label="Filters">
+    <fieldset>
+      <legend>Period</legend>
+      <div class="choices" id="period"></div>
+      <div class="dates" id="dates" hidden>
+        <label>From <input type="date" id="date-from"></label>
+        <label>To <input type="date" id="date-to"></label>
+      </div>
+    </fieldset>
+    <fieldset>
+      <legend>Market</legend>
+      <div class="choices" id="market"></div>
+    </fieldset>
+    <fieldset>
+      <legend>Supplier</legend>
+      <div class="choices" id="supplier"></div>
+    </fieldset>
+    <button class="quiet" id="refresh" type="button">Refresh</button>
+  </div>
+
+  <main id="main" aria-live="polite">
+    <section class="tiles" id="tiles" aria-label="Totals"></section>
+
+    <section class="charts" aria-label="Rates by market and supplier">
+      <div class="card">
+        <h2>Fallback rate</h2>
+        <p class="sub">Share of questions the bot couldn't answer: no matching knowledge base entry for that supplier</p>
+        <div class="chart" id="gap-chart"></div>
+      </div>
+      <div class="card">
+        <h2>Escalation rate</h2>
+        <p class="sub">Share of turns handed to a person (compliance topics, requests for a person, repeated gaps)</p>
+        <div class="chart" id="esc-chart"></div>
+      </div>
+    </section>
+
+    <section class="card" style="margin-top:16px" aria-label="Numbers as a table">
+      <details>
+        <summary>Show the numbers as a table</summary>
+        <div class="table-wrap" id="group-table"></div>
+      </details>
+    </section>
+
+    <section class="card unanswered" aria-labelledby="unanswered-title">
+      <h2 id="unanswered-title">Unanswered questions</h2>
+      <p class="sub" id="unanswered-sub">Candidates for the next knowledge base version</p>
+      <div class="table-tools">
+        <label class="search">
+          <span class="visually-hidden">Search questions</span>
+          <input type="search" id="q-search" placeholder="Search questions" autocomplete="off">
+        </label>
+        <label class="check"><input type="checkbox" id="q-handed"> Only handed to a person</label>
+        <label class="check"><input type="checkbox" id="q-repeat"> Only asked more than once</label>
+      </div>
+      <div class="table-wrap" id="unanswered"></div>
+      <p id="q-more-wrap" hidden><button class="quiet" id="q-more" type="button"></button></p>
+    </section>
+  </main>
+</div>
+<div class="tooltip" id="tooltip" role="presentation"></div>
+
+<script>
+  const MARKET_NAMES = { de: "Germany", es: "Spain", us: "United States" };
+  const PERIODS = [["all", "All time"], ["30d", "Last 30 days"], ["7d", "Last 7 days"], ["24h", "Last 24 hours"], ["custom", "Choose dates"]];
+  const state = { period: "all", market: "all", supplier: "all", from: "", to: "" };
+  // Table-only controls: they narrow the list below, not the charts.
+  const tableState = { search: "", handedOnly: false, repeatOnly: false, sort: "count", dir: "desc", showAll: false };
+  const FIRST_ROWS = 25;
+  const SUPPLIERS = [["avis", "Avis"], ["sixt", "SIXT"], ["enterprise", "Enterprise"], ["none", "Not recorded"]];
+  const SVG = "http://www.w3.org/2000/svg";
+
+  const pct = (r) => `${Math.round(r * 100)}%`;
+  const el = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; return n; };
+  const svgEl = (tag, attrs = {}) => { const n = document.createElementNS(SVG, tag); for (const [k, v] of Object.entries(attrs)) n.setAttribute(k, v); return n; };
+  const rowName = (g) => `${g.market.toUpperCase()} · ${g.supplier_name}`;
+
+  function chips(containerId, options, key) {
+    const box = document.getElementById(containerId);
+    box.replaceChildren();
+    for (const [value, label] of options) {
+      const lab = el("label");
+      const input = el("input");
+      input.type = "radio"; input.name = key; input.value = value; input.checked = state[key] === value;
+      input.addEventListener("change", () => {
+        state[key] = value;
+        if (key === "period") {
+          document.getElementById("dates").hidden = value !== "custom";
+          if (value !== "custom") { state.from = ""; state.to = ""; }
+          else { document.getElementById("date-from").focus(); if (!state.from && !state.to) return; }
+        }
+        load();
+      });
+      lab.append(input, el("span", null, label));
+      box.append(lab);
+    }
+  }
+
+  // ---------- Tooltip (enhances; every value is also in the labels and table) ----------
+  const tip = document.getElementById("tooltip");
+  function showTip(evt, g, rateKey, countKey, noun) {
+    tip.replaceChildren();
+    const value = el("strong", null, pct(g[rateKey]));
+    const line = el("div");
+    line.append(el("span", "key"), document.createTextNode(`${g[countKey]} of ${g.turns} turns ${noun}`));
+    tip.append(value, line, el("div", null, rowName(g)));
+    tip.style.display = "block";
+    let x, y;
+    if (evt.clientX !== undefined && evt.type !== "focus") { x = evt.clientX; y = evt.clientY; }
+    else { const r = evt.target.getBoundingClientRect(); x = r.left + r.width / 2; y = r.top; }
+    const w = tip.offsetWidth, h = tip.offsetHeight;
+    tip.style.left = `${Math.min(Math.max(8, x + 14), window.innerWidth - w - 8)}px`;
+    tip.style.top = `${Math.max(8, y - h - 10)}px`;
+  }
+  const hideTip = () => { tip.style.display = "none"; };
+
+  // ---------- Horizontal bar chart: one row per market + supplier ----------
+  function barChart(containerId, groups, rateKey, countKey, noun) {
+    const box = document.getElementById(containerId);
+    box.replaceChildren();
+    if (!groups.length) { box.append(el("p", "empty", "No turns in this selection.")); return; }
+
+    // Drawn at the card's real width, so text stays 13px on a phone too.
+    const width = Math.max(280, box.clientWidth || 520);
+    const labelW = width < 400 ? 112 : 140, valueW = width < 400 ? 78 : 92;
+    const rowH = 36, barH = 18, top = 4, axisH = 24;
+    const plotW = width - labelW - valueW;
+    const height = top + groups.length * rowH + axisH;
+    const x = (r) => labelW + r * plotW;
+    const svg = svgEl("svg", { viewBox: `0 0 ${width} ${height}`, role: "img",
+                               "aria-label": `${box.closest(".card").querySelector("h2").textContent} by market and supplier` });
+
+    // Recessive hairline grid at clean ticks.
+    const axis = svgEl("g", { class: "axis" });
+    for (const t of [0, 0.25, 0.5, 0.75, 1]) {
+      axis.append(svgEl("line", { class: t === 0 ? "baseline" : "gridline", x1: x(t), x2: x(t), y1: top, y2: top + groups.length * rowH }));
+      if (plotW < 240 && (t === 0.25 || t === 0.75)) continue;  // narrow: label 0 / 50 / 100 only
+      const label = svgEl("text", { x: x(t), y: height - 6, "text-anchor": "middle" });
+      label.textContent = pct(t);
+      axis.append(label);
+    }
+    svg.append(axis);
+
+    groups.forEach((g, i) => {
+      const y = top + i * rowH + (rowH - barH) / 2;
+      const row = svgEl("g", { class: "row" });
+
+      const name = svgEl("text", { class: "rowlabel", x: labelW - 10, y: y + barH / 2 + 4, "text-anchor": "end" });
+      name.textContent = rowName(g);
+      row.append(name);
+
+      // Bar grows from the baseline: square there, 4px rounded at the data end.
+      const w = g[rateKey] * plotW;
+      if (w > 0) {
+        const r = Math.min(4, w / 2, barH / 2);
+        const x0 = x(0);
+        row.append(svgEl("path", { class: "bar", d:
+          `M${x0},${y} H${x0 + w - r} Q${x0 + w},${y} ${x0 + w},${y + r} V${y + barH - r} ` +
+          `Q${x0 + w},${y + barH} ${x0 + w - r},${y + barH} H${x0} Z` }));
+      }
+
+      // Value at the tip, with the count so a 100% from one turn reads as such.
+      const v = svgEl("text", { class: "value-label", x: x(0) + w + 8, y: y + barH / 2 + 4 });
+      const strong = svgEl("tspan", { "font-weight": "600" });
+      strong.textContent = pct(g[rateKey]);
+      const count = svgEl("tspan", { class: "count", dx: "6" });
+      count.textContent = `${g[countKey]}/${g.turns}`;
+      v.append(strong, count);
+      row.append(v);
+
+      // The hit target is the whole row, bigger than the bar, and focusable.
+      const hit = svgEl("rect", { class: "hit", x: 0, y: top + i * rowH, width, height: rowH, tabindex: "0",
+                                  "aria-label": `${rowName(g)}: ${pct(g[rateKey])}, ${g[countKey]} of ${g.turns} turns ${noun}` });
+      for (const evt of ["pointermove", "focus"]) hit.addEventListener(evt, (e) => showTip(e, g, rateKey, countKey, noun));
+      for (const evt of ["pointerleave", "blur"]) hit.addEventListener(evt, hideTip);
+      row.append(hit);
+      svg.append(row);
+    });
+    box.append(svg);
+  }
+
+  function table(containerId, headers, rows, numeric) {
+    const box = document.getElementById(containerId);
+    box.replaceChildren();
+    const t = el("table"), head = el("tr");
+    headers.forEach((h, i) => head.append(el("th", numeric.includes(i) ? "num" : null, h)));
+    const thead = el("thead"); thead.append(head);
+    const tbody = el("tbody");
+    for (const r of rows) {
+      const tr = el("tr");
+      r.forEach((cell, i) => {
+        const td = el("td", numeric.includes(i) ? "num" : null);
+        if (cell instanceof Node) td.append(cell); else td.textContent = cell;
+        tr.append(td);
+      });
+      tbody.append(tr);
+    }
+    t.append(thead, tbody);
+    box.append(t);
+  }
+
+  // The next step, plus a link to the latest trace of the question in
+  // LangSmith, which shows why it had no answer (rewrite, scores, prompt).
+  function nextStep(u) {
+    const box = el("span", "next", u.next_step);
+    if (u.trace_url && /^https:\/\//.test(u.trace_url)) {
+      const a = el("a", "trace-link", "Why? Latest trace in LangSmith");
+      a.href = u.trace_url; a.target = "_blank"; a.rel = "noopener";
+      box.append(el("br"), a);
+    }
+    return box;
+  }
+
+  function tags(names) {
+    const box = el("span", "tags");
+    for (const n of names) box.append(el("span", "tag", n));
+    return box;
+  }
+
+  function tiles(t) {
+    const box = document.getElementById("tiles");
+    box.replaceChildren();
+    const items = [
+      ["Conversation turns", t.turns.toLocaleString("en"), `estimated model cost $${t.cost.toFixed(4)}`],
+      ["Resolved by the bot", pct(t.resolved_rate), `${t.resolved} answered from the KB, not handed over`],
+      ["Fallback rate", pct(t.gap_rate), `${t.gaps} of ${t.turns} without a KB answer`],
+      ["Escalation rate", pct(t.escalation_rate), `${t.escalations} of ${t.turns} handed to a person`],
+    ];
+    for (const [label, value, detail] of items) {
+      const tile = el("div", "tile");
+      tile.append(el("div", "label", label), el("div", "value", value), el("div", "detail", detail));
+      box.append(tile);
+    }
+  }
+
+  let lastData = null;
+  let resizeTimer = null;
+  window.addEventListener("resize", () => {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(() => { if (lastData) render(lastData); }, 150);
+  });
+
+  function render(data) {
+    lastData = data;
+    const ls = document.getElementById("langsmith-link");
+    if (data.langsmith_project_url && /^https:\/\//.test(data.langsmith_project_url)) {
+      ls.href = data.langsmith_project_url; ls.hidden = false;
+    }
+    tiles(data.totals);
+    barChart("gap-chart", data.groups, "gap_rate", "gaps", "without a KB answer");
+    barChart("esc-chart", data.groups, "escalation_rate", "escalations", "handed to a person");
+
+    table("group-table",
+      ["Market", "Supplier", "Turns", "Resolved", "Fallbacks", "Fallback rate", "Escalations", "Escalation rate", "Intent recognised", "Est. cost"],
+      data.groups.map((g) => [MARKET_NAMES[g.market] || g.market, g.supplier_name, g.turns, pct(g.resolved_rate), g.gaps, pct(g.gap_rate),
+                              g.escalations, pct(g.escalation_rate), pct(g.intent_rate), `$${g.cost.toFixed(4)}`]),
+      [2, 3, 4, 5, 6, 7, 8, 9]);
+
+    renderUnanswered();
+  }
+
+  // ---------- Unanswered questions: search, two toggles, sortable columns ----------
+  const SORTS = {
+    question: (a, b) => a.question.localeCompare(b.question, undefined, { sensitivity: "base" }),
+    count: (a, b) => a.count - b.count || a.last_seen - b.last_seen,
+    handed_over: (a, b) => a.handed_over - b.handed_over || a.count - b.count,
+    last_seen: (a, b) => a.last_seen - b.last_seen,
+  };
+
+  // The question with the search term marked; text nodes only, never HTML.
+  function highlighted(text, term) {
+    const span = el("span");
+    const i = term ? text.toLowerCase().indexOf(term) : -1;
+    if (i < 0) { span.textContent = text; return span; }
+    span.append(document.createTextNode(text.slice(0, i)), el("mark", null, text.slice(i, i + term.length)),
+                document.createTextNode(text.slice(i + term.length)));
+    return span;
+  }
+
+  function sortHeader(label, key, numeric) {
+    const th = el("th", numeric ? "num" : null);
+    const b = el("button", "sort", label);
+    b.type = "button";
+    const active = tableState.sort === key;
+    th.setAttribute("aria-sort", active ? (tableState.dir === "asc" ? "ascending" : "descending") : "none");
+    if (active) b.textContent = `${label} ${tableState.dir === "asc" ? "↑" : "↓"}`;
+    b.addEventListener("click", () => {
+      tableState.dir = active && tableState.dir === "desc" ? "asc" : (active ? "desc" : (key === "question" ? "asc" : "desc"));
+      tableState.sort = key;
+      renderUnanswered();
+      document.querySelector(`#unanswered th[aria-sort]:not([aria-sort="none"]) button`)?.focus();
+    });
+    th.append(b);
+    return th;
+  }
+
+  function renderUnanswered() {
+    if (!lastData) return;
+    const box = document.getElementById("unanswered");
+    const sub = document.getElementById("unanswered-sub");
+    const term = tableState.search.trim().toLowerCase();
+    let rows = lastData.unanswered.filter((u) =>
+      (!term || u.question.toLowerCase().includes(term)) &&
+      (!tableState.handedOnly || u.handed_over > 0) &&
+      (!tableState.repeatOnly || u.count > 1));
+    const sorter = SORTS[tableState.sort];
+    rows.sort((a, b) => (tableState.dir === "asc" ? 1 : -1) * sorter(a, b));
+
+    const total = lastData.unanswered.length;
+    const narrowed = term || tableState.handedOnly || tableState.repeatOnly;
+    sub.textContent = narrowed
+      ? `${rows.length} of ${total} unanswered questions match`
+      : `${total} candidates for the next knowledge base version` +
+        (lastData.unanswered_total > total ? ` (most asked ${total} of ${lastData.unanswered_total})` : "");
+
+    if (!rows.length) {
+      box.replaceChildren(el("p", "empty", total ? "No question matches these table filters." : "No unanswered questions in this selection."));
+      document.getElementById("q-more-wrap").hidden = true;
+      return;
+    }
+    const shown = tableState.showAll ? rows : rows.slice(0, FIRST_ROWS);
+    const t = el("table"), thead = el("thead"), head = el("tr"), tbody = el("tbody");
+    head.append(sortHeader("Question", "question"), el("th", null, "Market"), el("th", null, "Asked for"),
+                sortHeader("Times asked", "count", true), sortHeader("Handed to a person", "handed_over"),
+                sortHeader("Last asked", "last_seen"), el("th", null, "Next step"));
+    thead.append(head);
+    for (const u of shown) {
+      const tr = el("tr");
+      const cells = [highlighted(u.question, term), MARKET_NAMES[u.market] || u.market, tags(u.supplier_names), u.count,
+                     u.handed_over ? `${u.handed_over}x` : "no",
+                     new Date(u.last_seen * 1000).toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short" }),
+                     nextStep(u)];
+      cells.forEach((cell, i) => {
+        const td = el("td", i === 3 ? "num" : null);
+        if (cell instanceof Node) td.append(cell); else td.textContent = cell;
+        tr.append(td);
+      });
+      tbody.append(tr);
+    }
+    t.append(thead, tbody);
+    box.replaceChildren(t);
+
+    const moreWrap = document.getElementById("q-more-wrap"), more = document.getElementById("q-more");
+    moreWrap.hidden = rows.length <= FIRST_ROWS;
+    more.textContent = tableState.showAll ? `Show the first ${FIRST_ROWS}` : `Show all ${rows.length}`;
+  }
+
+  async function load() {
+    const main = document.getElementById("main");
+    main.classList.add("loading");  // keep the previous render, dimmed, while loading
+    try {
+      const params = new URLSearchParams({ period: state.period, market: state.market, supplier: state.supplier });
+      if (state.period === "custom") { if (state.from) params.set("from", state.from); if (state.to) params.set("to", state.to); }
+      const res = await fetch(`/api/analytics?${params}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      render(await res.json());
+    } catch (e) {
+      document.getElementById("tiles").replaceChildren(el("p", "error", "The analytics could not be loaded. Is web_app.py running?"));
+    } finally {
+      main.classList.remove("loading");
+    }
+  }
+
+  chips("period", PERIODS, "period");
+  chips("market", [["all", "All"], ...["de", "es", "us"].map((m) => [m, MARKET_NAMES[m]])], "market");
+  chips("supplier", [["all", "All"], ...SUPPLIERS], "supplier");
+  document.getElementById("refresh").addEventListener("click", load);
+
+  for (const [id, key] of [["date-from", "from"], ["date-to", "to"]]) {
+    document.getElementById(id).addEventListener("change", (e) => {
+      state[key] = e.target.value;
+      const from = document.getElementById("date-from"), to = document.getElementById("date-to");
+      to.min = from.value; from.max = to.value;  // a "to" before "from" can't be picked
+      load();
+    });
+  }
+
+  let searchTimer = null;
+  document.getElementById("q-search").addEventListener("input", (e) => {
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(() => { tableState.search = e.target.value; tableState.showAll = false; renderUnanswered(); }, 120);
+  });
+  document.getElementById("q-handed").addEventListener("change", (e) => { tableState.handedOnly = e.target.checked; renderUnanswered(); });
+  document.getElementById("q-repeat").addEventListener("change", (e) => { tableState.repeatOnly = e.target.checked; renderUnanswered(); });
+  document.getElementById("q-more").addEventListener("click", () => { tableState.showAll = !tableState.showAll; renderUnanswered(); });
+  load();
+</script>
+</body>
+</html>

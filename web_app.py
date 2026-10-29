@@ -3,6 +3,7 @@ web_app.py
 
 Web entry point: the same bot as main.py, reachable from a browser.
 Run: python web_app.py   then open http://127.0.0.1:5000
+     Analytics dashboard:   http://127.0.0.1:5000/dashboard
 
 How the pieces fit:
   - The chat page (web/index.html) is only the "front door". It sends each
@@ -51,6 +52,31 @@ def _error(status: int, code: str, message: str):
 @app.get("/")
 def index():
     return send_from_directory(WEB_DIR, "index.html")
+
+
+@app.get("/dashboard")
+def dashboard():
+    """Analytics page: gap and escalation rates, unanswered questions."""
+    return send_from_directory(WEB_DIR, "dashboard.html")
+
+
+@app.get("/api/analytics")
+def api_analytics():
+    """
+    The dashboard numbers. Only on this local web app, never on the channel
+    API (bot_api.py), because it shows what customers wrote.
+    """
+    from analytics.dashboard import collect
+    from observability.tracing import run_url_template
+
+    return jsonify(collect(
+        period=request.args.get("period", "all"),
+        market=request.args.get("market", "all"),
+        supplier=request.args.get("supplier", "all"),
+        date_from=request.args.get("from") or None,
+        date_to=request.args.get("to") or None,
+        trace_url_template=run_url_template(),  # None if LangSmith can't be reached: no links, same numbers
+    ))
 
 
 @app.get("/api/config")
@@ -136,6 +162,7 @@ def main() -> None:
     print(f"Knowledge search: {retrieval.warm_up()}")
 
     print(f"Chat page: http://127.0.0.1:{config.WEB_PORT}   (Ctrl+C to stop)")
+    print(f"Analytics: http://127.0.0.1:{config.WEB_PORT}/dashboard")
     app.run(host="127.0.0.1", port=config.WEB_PORT, debug=False)
 
 

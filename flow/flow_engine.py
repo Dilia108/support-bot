@@ -25,7 +25,8 @@ Stage order:
 from __future__ import annotations
 
 import time
-from dataclasses import dataclass
+import uuid
+from dataclasses import dataclass, field
 
 import config
 from compliance.rules import check_compliance
@@ -54,6 +55,10 @@ class TurnResult:
     # The customer's message as the bot understood it. For a follow-up like
     # "And if I prepaid?" this is the rewritten, self-contained question.
     understood_as: str = ""
+    # How the knowledge base was searched, shown on the turn's LangSmith
+    # trace: mode, KB version, scores, and for a gap the reason (best score
+    # vs. threshold). Empty for escalated turns, which skip the search.
+    retrieval: dict = field(default_factory=dict)
 
 
 def _get_kb_documents(market: str, supplier: str):
@@ -72,6 +77,16 @@ def _escalation_response(market: str, reason: str) -> str:
     return messages.get(market, messages["us"])
 
 
+def _gap_handover_response(market: str, supplier: str) -> str:
+    name = config.SUPPLIER_NAMES.get(supplier, supplier)
+    messages = {
+        "de": f"Dazu habe ich leider auch keine Informationen zu {name}. Ich verbinde Sie mit einem Mitarbeiter, der Ihnen weiterhelfen kann.",
+        "es": f"Tampoco tengo información sobre esto para {name}. Te voy a poner en contacto con un miembro de nuestro equipo.",
+        "us": f"I don't have information on that for {name} either. I'm connecting you with a team member who can help.",
+    }
+    return messages.get(market, messages["us"])
+
+
 def handle_message(session_id: str, market: str, supplier: str, user_text: str) -> TurnResult:
     """
     Runs one conversation turn inside a LangSmith trace.
@@ -80,14 +95,18 @@ def handle_message(session_id: str, market: str, supplier: str, user_text: str) 
     never reach a model (compliance escalations) are visible in LangSmith
     too. The model call in stage 5 shows up as a step inside this trace.
     """
+    # The trace id is chosen here so the conversation log can store it and
+    # the dashboard can link each unanswered question to its trace.
+    trace_id = str(uuid.uuid4())
     with trace_call(
         "conversation_turn",
         market=market,
         inputs={"input": user_text},
+        run_id=trace_id,
         session_id=session_id,
         supplier=supplier,
     ) as turn:
-        result = _run_turn(session_id, market, supplier, user_text)
+        result = _run_turn(session_id, market, supplier, user_text, trace_id=trace_id)
         tags = [f"supplier:{supplier}"]
         tags += [tag for tag, on in (("escalated", result.escalated), ("kb_gap", result.kb_gap)) if on]
         turn.record_result(
@@ -97,11 +116,12 @@ def handle_message(session_id: str, market: str, supplier: str, user_text: str) 
             escalated=result.escalated,
             kb_gap=result.kb_gap,
             understood_as=result.understood_as,
+            **result.retrieval,
         )
     return result
 
 
-def _run_turn(session_id: str, market: str, supplier: str, user_text: str) -> TurnResult:
+def _run_turn(session_id: str, market: str, supplier: str, user_text: str, trace_id: str = None) -> TurnResult:
     start_time = time.time()
     kb_gap = False
     escalated = False
@@ -141,9 +161,10 @@ def _run_turn(session_id: str, market: str, supplier: str, user_text: str) -> Tu
         bot_text = _escalation_response(market, reason or "compliance escalation")
         final_text = apply_disclosure(session_id, market, bot_text)
         memory.remember(session_id, user_text, bot_text)
+        memory.reset_gaps(session_id)
         _log_turn(
             session_id, market, supplier, user_text, final_text, intent_result,
-            kb_gap=False, escalated=True,
+            trace_id=trace_id, kb_gap=False, escalated=True,
             provider_used=_provider(rewrite_response), model_used=_model(rewrite_response),
             tokens_in=_tokens_in(rewrite_response), tokens_out=_tokens_out(rewrite_response),
             latency=time.time() - start_time, error=reason, cost=_cost(rewrite_response),
@@ -155,19 +176,51 @@ def _run_turn(session_id: str, market: str, supplier: str, user_text: str) -> Tu
     context_text = ""
     kb_version = ""  # which dated KB file answered; recorded on the trace
     kb_scores: list = []  # similarity of the entries handed to the model
+    kb_gap_reason = ""
+    kb_matched: list = []  # headings of the entries handed to the model
     try:
         documents = _get_kb_documents(market, supplier)
         kb_version = documents[0].version
         results = retrieval.retrieve(question, documents)
         kb_scores = [r.score for r in results]
+        kb_matched = [r.document.heading for r in results]
         context_text = "\n\n".join(f"{r.document.heading}: {r.document.content}" for r in results)
     except KBLoadError as e:
         log_error("kb_load", str(e), market=market, session_id=session_id)
         context_text = ""  # no KB available -- LLM will answer generically, flagged below
     except KBGapError as e:
         kb_gap = True
+        kb_gap_reason = str(e)
         log_error("kb_gap", str(e), market=market, session_id=session_id)
         context_text = ""  # signal recorded for analytics; conversation still continues
+
+    retrieval_info = {
+        "retriever": retrieval.active_retriever(),
+        "kb_version": kb_version,
+        "kb_scores": kb_scores,
+        "kb_matched": kb_matched,
+    }
+    if kb_gap:
+        retrieval_info["kb_gap_reason"] = kb_gap_reason
+
+    # --- Repeated gaps: hand over instead of another "I don't know" --------
+    # The gap is still logged (kb_gap=True) so the dashboard counts it. No
+    # model call is needed for a fixed handover message.
+    if memory.count_gap(session_id, kb_gap) >= config.MAX_CONSECUTIVE_GAPS:
+        memory.reset_gaps(session_id)
+        reason = f"{config.MAX_CONSECUTIVE_GAPS} questions in a row without a knowledge base answer"
+        bot_text = _gap_handover_response(market, supplier)
+        final_text = apply_disclosure(session_id, market, bot_text)
+        memory.remember(session_id, user_text, bot_text)
+        _log_turn(
+            session_id, market, supplier, user_text, final_text, intent_result,
+            trace_id=trace_id, kb_gap=True, escalated=True,
+            provider_used=_provider(rewrite_response), model_used=_model(rewrite_response),
+            tokens_in=_tokens_in(rewrite_response), tokens_out=_tokens_out(rewrite_response),
+            latency=time.time() - start_time, error=reason, cost=_cost(rewrite_response),
+        )
+        return TurnResult(text=final_text, intent=intent_result.intent.value, escalated=True,
+                          kb_gap=True, understood_as=question, retrieval=retrieval_info)
 
     # --- Stage 5: call the LLM (already retries + falls back internally) ---
     prompt = _build_prompt(market, supplier, intent_result.intent, user_text, question, history, context_text, kb_gap)
@@ -184,6 +237,7 @@ def _run_turn(session_id: str, market: str, supplier: str, user_text: str) -> Tu
         kb_version=kb_version,
         retriever=retrieval.active_retriever(),
         kb_scores=kb_scores,
+        kb_gap_reason=kb_gap_reason,
         user_message=user_text,
         understood_as=question,
         kb_gap=kb_gap,
@@ -210,7 +264,7 @@ def _run_turn(session_id: str, market: str, supplier: str, user_text: str) -> Tu
 
     _log_turn(
         session_id, market, supplier, user_text, final_text, intent_result,
-        kb_gap=kb_gap, escalated=escalated,
+        trace_id=trace_id, kb_gap=kb_gap, escalated=escalated,
         provider_used=llm_response.provider_used, model_used=llm_response.model_used,
         tokens_in=llm_response.tokens_in + _tokens_in(rewrite_response),
         tokens_out=llm_response.tokens_out + _tokens_out(rewrite_response),
@@ -218,7 +272,7 @@ def _run_turn(session_id: str, market: str, supplier: str, user_text: str) -> Tu
     )
 
     return TurnResult(text=final_text, intent=intent_result.intent.value, escalated=escalated,
-                      kb_gap=kb_gap, understood_as=question)
+                      kb_gap=kb_gap, understood_as=question, retrieval=retrieval_info)
 
 
 # --- Follow-up questions ------------------------------------------------------
@@ -386,7 +440,7 @@ def _build_prompt(market: str, supplier: str, intent: Intent, user_text: str, qu
     )
 
 
-def _log_turn(session_id, market, supplier, user_text, bot_text, intent_result, *, kb_gap, escalated,
+def _log_turn(session_id, market, supplier, user_text, bot_text, intent_result, *, trace_id=None, kb_gap, escalated,
               provider_used, model_used, tokens_in, tokens_out, latency, error, cost: float = 0.0):
     entry = ConversationLogEntry(
         timestamp=time.time(),
@@ -406,5 +460,6 @@ def _log_turn(session_id, market, supplier, user_text, bot_text, intent_result, 
         estimated_cost_usd=cost,
         latency_seconds=latency,
         error=error,
+        trace_id=trace_id,
     )
     log_conversation(entry)

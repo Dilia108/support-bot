@@ -411,7 +411,7 @@
     // Shown only when a follow-up was rewritten using the earlier turns.
     if (data.understood_as && data.understood_as !== data.asked) rows.push(["Understood as", data.understood_as]);
     rows.concat([["Intent", data.intent],
-     ["Knowledge base", data.escalated ? "not used" : (data.kb_gap ? "no matching entry (recorded as a gap)" : "answered from the supplier's entry")],
+     ["Knowledge base", data.kb_gap ? "no matching entry (recorded as a gap)" : (data.escalated ? "not used" : "answered from the supplier's entry")],
      ["Handed to a person", data.escalated ? "yes" : "no"]
     ]).forEach(function (row) {
       var line = node("div");
