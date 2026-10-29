@@ -40,6 +40,7 @@ import logging
 import math
 import os
 import threading
+import uuid
 from typing import Optional
 
 from langchain_core.embeddings import Embeddings
@@ -104,27 +105,45 @@ def _index_key(documents: list[KBDocument]) -> tuple:
 
 
 def _get_index(documents: list[KBDocument]):
-    """The Chroma collection for these documents, built on first use."""
+    """
+    The Chroma collection for these documents, built on first use, plus our
+    own copy of its vectors: {(position, part): vector}.
+
+    The vectors are computed once here and handed to Chroma, so Chroma and
+    the bot hold exactly the same numbers. The copy is what completes a
+    search if Chroma returns fewer entries than it stores (see
+    similarities()); it never has to ask Chroma for its stored vectors,
+    which failed with "Error finding id" on one chromadb version.
+    """
     key = _index_key(documents)
     with _lock:
-        index = _indexes.get(key)
-        if index is None:
+        cached = _indexes.get(key)
+        if cached is None:
             from langchain_chroma import Chroma
-            from langchain_core.documents import Document
+
+            parts = []
+            for i, d in enumerate(documents):
+                parts.append((i, "heading", d.heading))
+                parts.append((i, "full", f"{d.heading}\n{d.content}"))
+            vectors = _get_embeddings().embed_documents([text for _, _, text in parts])
 
             index = Chroma(
-                collection_name="kb-" + "-".join(str(part) for part in key[:3]).replace(".", "_"),
+                # A unique name per build, so a collection can never be reused
+                # by mistake within one process.
+                collection_name="kb-" + "-".join(str(p) for p in key[:3]).replace(".", "_") + "-" + uuid.uuid4().hex[:8],
                 embedding_function=_get_embeddings(),
                 # Cosine similarity: 1 = same meaning, 0 = unrelated.
                 collection_metadata={"hnsw:space": "cosine"},
             )
-            entries = []
-            for i, d in enumerate(documents):
-                entries.append(Document(page_content=d.heading, metadata={"position": i, "part": "heading"}))
-                entries.append(Document(page_content=f"{d.heading}\n{d.content}", metadata={"position": i, "part": "full"}))
-            index.add_documents(entries, ids=[f"{e.metadata['position']}-{e.metadata['part']}" for e in entries])
-            _indexes[key] = index
-    return index
+            index._collection.add(
+                ids=[f"{i}-{part}" for i, part, _ in parts],
+                embeddings=vectors,
+                documents=[text for _, _, text in parts],
+                metadatas=[{"position": i, "part": part} for i, part, _ in parts],
+            )
+            cached = (index, {(i, part): list(v) for (i, part, _), v in zip(parts, vectors)})
+            _indexes[key] = cached
+    return cached
 
 
 def similarities(query: str, documents: list[KBDocument]) -> list[dict[str, float]]:
@@ -132,22 +151,21 @@ def similarities(query: str, documents: list[KBDocument]) -> list[dict[str, floa
     For each entry, in order: {"heading": ..., "full": ...}, each a
     similarity between 0 (unrelated) and 1 (same meaning).
     """
-    index = _get_index(documents)
+    index, vectors = _get_index(documents)
     query_vector = _get_embeddings().embed_query(query)
-    expected = 2 * len(documents)
+    expected = len(vectors)
     hits = index.similarity_search_by_vector_with_relevance_scores(query_vector, k=expected)
     found = {(doc.metadata["position"], doc.metadata["part"]): 1.0 - distance for doc, distance in hits}
 
     # Every entry must get a score, or a good entry could silently drop out.
-    # Chroma's search is approximate (built for millions of vectors); if it
-    # ever returns fewer vectors than were stored, the missing ones are
-    # scored exactly from the vectors Chroma holds.
+    # Chroma's search is approximate (built for millions of vectors) and may
+    # return fewer vectors than it stores; the missing ones are then scored
+    # exactly from our own copy of the vectors.
     if len(found) < expected:
         global incomplete_searches
         incomplete_searches += 1
-        stored = index.get(include=["embeddings", "metadatas"])
-        for meta, vector in zip(stored["metadatas"], stored["embeddings"]):
-            found.setdefault((meta["position"], meta["part"]), _cosine(query_vector, list(vector)))
+        for key, vector in vectors.items():
+            found.setdefault(key, _cosine(query_vector, vector))
         logger.debug("Chroma returned %d of %d vectors; scored the rest directly", len(hits), expected)
     if not found:
         # Not a knowledge gap: the store itself returned nothing.

@@ -308,16 +308,21 @@ don't need to understand LangSmith to review `flow_engine.py`.
   heading and one for heading + text; the better match counts, because a
   long entry mixes several subjects and blurs its vector.
   The decision to go hybrid came from measuring, not from assumption.
-  `tests/evaluate_retrieval.py` runs 51 labelled questions (DE/ES/US)
+  `tests/evaluate_retrieval.py` runs labelled questions (DE/ES/US)
   against all three suppliers: tuned-on phrasings, *held-out* phrasings
   the keyword rules were never tuned on, and questions the FAQ does not
-  answer. Results (153 checks):
+  answer. Results with the 2026-10-06 knowledge base (51 questions, 153
+  checks; the set has grown since, see below):
 
   | Variant | Correct | Held-out | Gaps kept | Wrong entry |
   |---|---|---|---|---|
   | Keyword only | 116 (76%) | 33/69 | 38/39 | 19 |
   | Vector only (best threshold 0.40) | 119 (78%) | 44/69 | 32/39 | 30 |
   | **Hybrid (threshold 0.55)** | **124 (81%)** | **41/69** | **38/39** | 22 |
+
+  After the 2026-10-29 release (pets added, 56 questions, 168 checks):
+  keyword 131, hybrid at 0.55 **139**, with 56/84 held-out phrasings and
+  29/30 gaps kept; 0.55 is still on the plateau, so it was kept.
 
   Vector search alone handled rephrasings far better ("Ich stehe im
   Stau…" finds *Verspätete Rückgabe* without a shared word) but confused
@@ -363,7 +368,7 @@ don't need to understand LangSmith to review `flow_engine.py`.
   ("Is my reservation confirmed?" matches *Cancel a booking* through the
   word "reservation"). Some questions are ambiguous by nature ("pick up
   the car a day later" is a *change*, but sounds like a *late return*).
-- The evaluation set is small (51 questions), and the variant and
+- The evaluation set is small (56 questions), and the variant and
   threshold were chosen on it, so the numbers are optimistic. New
   real questions from the gap report should be added to it before
   changing the settings again. One threshold serves all three languages.
@@ -377,8 +382,8 @@ don't need to understand LangSmith to review `flow_engine.py`.
 
 - Swap `flow/intents.py`'s keyword classifier for an LLM-based one and
   compare accuracy/cost trade-offs.
-- Add an entry to each supplier file covering a new topic (pets,
-  additional drivers, deposits), then use
-  `analytics/dashboard.py`'s gap report to verify the gap disappears.
+- Close the next gaps the same way pets were closed (see
+  `docs/ROLLOUT.md`, phase 11): additional drivers and deposits are the
+  most-asked remaining topics.
 - Publish the Botpress flow as a webchat with the Python bot hosted at a
   permanent address instead of a tunnel.

@@ -38,8 +38,8 @@ A market goes live only when all of these hold:
 ### Phase 1: Germany pilot with one FAQ per market
 
 Escalation, the AI notice and gap recording worked. The first real gap was
-recorded: "Kann ich meinen Hund mitnehmen?" (pets). It is still open; see
-the last section.
+recorded: "Kann ich meinen Hund mitnehmen?" (pets). It was closed in
+phase 11.
 
 ### Phase 2: Spain
 
@@ -104,6 +104,97 @@ to the *cancellation* entry (through "24 Stunden").
 **Change:** the bot keeps the last three turns and rewrites a follow-up into
 a self-contained question before searching the FAQ (`flow/memory.py`).
 
+### Phase 7: Botpress as a second channel
+
+**Finding:** a chat platform runs in the cloud and needs to reach the bot over
+the internet, but the web chat has no login and every message costs model
+tokens.
+
+**Change:** a separate channel API (`bot_api.py`) on its own port that
+refuses requests without the key and caps requests per minute. The Botpress
+flow asks for market and supplier with buttons and sends each question to
+it. During the build, the condition Botpress generated for its error branch
+was `true`, so every reply went down the error path; it became
+`!!workflow.apiError`.
+
+### Phase 8: retrieval by meaning, measured before switching
+
+**Finding:** each phase so far had needed another hand-written matching
+rule. Embeddings were the obvious fix, but the switch was decided on
+numbers, not assumed: 51 labelled questions in three languages, against all
+three suppliers (153 checks), including phrasings the keyword rules were
+never tuned on and questions the FAQ does not answer
+(`tests/evaluate_retrieval.py`).
+
+| | Correct | Held-out phrasings | Gaps kept | Wrong entry |
+|---|---|---|---|---|
+| Keyword only | 116 | 33/69 | 38/39 | 19 |
+| Vector only (LangChain + Chroma) | 119 | 44/69 | 32/39 | 30 |
+| Hybrid (chosen) | 124 | 41/69 | 38/39 | 22 |
+
+Vector search alone understood rephrasings ("Ich stehe im Stau…" found the
+late-return entry without a shared word) but confused neighbouring topics
+(cancel vs. change a booking) and answered questions the FAQ doesn't cover.
+
+**Change:** hybrid retrieval: keyword matching first, the vector search only
+when it finds nothing, at a threshold of 0.55, chosen on a plateau of the
+threshold sweep rather than a single peak. If the model can't be loaded,
+the bot falls back to keywords.
+
+**Lesson:** the more modern method was not better on its own. Measuring
+showed where each fails, and the combination keeps the keyword matcher's
+gap handling while catching rephrasings.
+
+### Phase 9: repeated gaps go to a person
+
+**Finding:** in Botpress, a customer who asked three unanswerable questions
+got the same "I don't have that information" three times, with no way out.
+
+**Change:** after two unanswered questions in a row the bot hands over to a
+person (`SUPPORT_BOT_MAX_CONSECUTIVE_GAPS`). The rule lives in the Python
+bot, so the web chat and Botpress needed no change to their flows.
+
+### Phase 10: dashboard, linked to LangSmith
+
+**Finding:** the text report counted gaps but didn't say what to do about
+them, and a gap's LangSmith trace showed *that* nothing matched but not
+*why*: the list of scores is empty when no entry is used.
+
+**Change:** a dashboard (`/dashboard`) with fallback and escalation rates per
+market and supplier, and the unanswered questions grouped per market with a
+next step each. Every question links to its latest trace, which now carries
+the gap reason, for example "No knowledge base match above 0.55
+(best 0.246)" for "Can I bring my cat with me?".
+
+### Phase 11: closing the top gap (pets)
+
+**Finding:** the dashboard listed pets as the most-asked unanswered topic, in
+all three markets and for every supplier ("Kann ich meinen Hund
+mitnehmen?", "¿Puedo llevar a mi perro?", "Can I bring my cat with me?").
+Its trace showed the reason: best match 0.246, threshold 0.55.
+
+**Change:** a new knowledge base version dated 2026-10-29 with a pets entry,
+researched per supplier and market (`knowledge_base/CHANGELOG.md`,
+`SOURCES.md`). The policies differ: Avis US allows pets at most locations
+with a cleaning fee of up to $450, Avis Spain needs the office's prior
+approval, Enterprise US requires a crate, and Enterprise publishes no pet
+policy for Germany or Spain, so those entries say to ask the branch. SIXT
+Spain sells a pet add-on that covers normal soiling; its page could not be
+read automatically and was copied by hand.
+
+Four words in the new texts pulled unrelated questions to the pets entry in
+testing (for example "según" matched "segundo conductor"). They were
+reworded before release, and the evaluation set gained seven pet questions.
+With keyword matching alone, 131 of 168 checks are right with the new
+version against 125 with the old one, and no question that was right
+before is wrong now. With the hybrid retrieval the bot uses, 139 of 168
+are right, every pet question included, and 0.55 is still on the
+plateau of the threshold sweep (138–139 between 0.40 and 0.60), so the
+threshold stays.
+
+**Lesson:** a new entry can break questions that have nothing to do with it.
+Re-running the evaluation set before every KB release is what catches that.
+
 ## How a gap becomes a fix
 
 ![How a gap becomes a fix: conversations feed the report, each failure is classified, and the fix is a new KB version, a matching rule, or a corrected text, followed by re-running the test questions](diagrams/improvement-loop.png)
@@ -112,12 +203,19 @@ Source: [diagrams/improvement-loop.mmd](diagrams/improvement-loop.mmd)
 
 ## Open findings
 
-- **Topics not covered:** pets, additional drivers, deposits, fuel and age
-  limits are answered with "no information". These are the next KB entries.
+- **Topics not covered:** additional drivers, deposits, fuel and age limits
+  are answered with "no information". These are the next KB entries.
 - **SIXT cancellation fees:** the amounts are not on SIXT's help pages and
   still need to be added by hand.
 - **Intent analytics:** late-return questions are counted as "unknown"
-  because `flow/intents.py` has no intent for them.
-- **Keyword retrieval is near its limit:** each phase above needed another
-  matching rule. Embeddings would replace those rules (see the upgrade path in
-  `knowledge/retriever.py`).
+  because `flow/intents.py` has no intent for them. The intent only decides
+  routing, so the answers are not affected.
+- **Confident keyword mistakes are not corrected:** in hybrid mode the
+  keyword matcher goes first, so "Is my reservation confirmed?" still lands
+  on *Cancel a booking* through the word "reservation".
+- **Rephrasings count as separate gaps:** "Kann ich meinen Hund mitnehmen?"
+  and "Darf ich einen Hund mitbringen?" are listed as two questions on the
+  dashboard. Grouping by meaning would use the same embedding model.
+- **The evaluation set is small** (56 questions) and the retrieval settings
+  were chosen on it, so its numbers are optimistic. Real questions from the
+  gap list should be added before the settings change again.

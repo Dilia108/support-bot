@@ -1,8 +1,9 @@
 # Knowledge base sources
 
 Each FAQ file (`<market>/<supplier>/<date>.md`) contains only what the
-supplier publishes on the pages below. Checked on 2026-10-06, for the
-versions dated 2026-10-06. What changed between versions is in `CHANGELOG.md`. Supplier policies
+supplier publishes on the pages below. Checked on 2026-10-06 for the
+versions dated 2026-10-06; the pet pages were checked on 2026-10-29 for the
+versions dated 2026-10-29. What changed between versions is in `CHANGELOG.md`. Supplier policies
 change and differ by rate type, so re-check before relying on them.
 
 ## Avis
@@ -16,6 +17,9 @@ change and differ by rate type, so re-check before relying on them.
 | ES | Cancel | https://faq.avis.es/?question=puedo-cancelar-una-reserva |
 | ES | Change, check | https://faq.avis.es/?question=puedo-modificar-una-reserva |
 | ES | Late return | https://faq.avis.es/?question=por-que-me-han-cobrado-un-dia-adicional |
+| US | Pets | https://www.avis.com/en/help/usa-faqs/pet-policy |
+| DE | Pets | https://faq.avis.de/?question=kann-ich-haustiere-mit-dem-mietwagen-mitnehmen |
+| ES | Pets | https://faq.avis.es/?question=puedo-llevar-mascotas-en-el-coche-de-alquiler |
 
 ## SIXT
 
@@ -30,6 +34,9 @@ change and differ by rate type, so re-check before relying on them.
 | ES | Cancel, check | https://www.sixt.es/help-center/articles/cancelaciones-modificaciones/ |
 | ES | Change | https://www.sixt.es/help-center/articles/debo-elegir-la-tarifa-flexi-o-prepaid-para-mi-reserva-sixt/ |
 | ES | Late return | https://www.sixt.es/help-center/app/articles/devolucion-tardia/ |
+| US | Pets | https://www.sixt.com/help-center/articles/pet-car-rental/ and, for the service-animal fee waiver, https://sixt.com/pet-car-rental |
+| DE | Pets | https://www.sixt.de/help-center/articles/mietwagen-mit-hund/ |
+| ES | Pets | https://www.sixt.es/help-center/articles/puedo-llevar-mascotas-en-mi-coche-de-alquiler-sixt/ (copied by hand from the browser; the page could not be read automatically) |
 
 ## Enterprise
 
@@ -42,6 +49,8 @@ change and differ by rate type, so re-check before relying on them.
 | DE | Late return | https://www.enterprise.de/de/haeufig-gestellte-fragen-zur-autovermietung/deutschland-allgemein/verspaetete-mietwagenrueckgabe.html |
 | ES | Cancel, change, check | https://www.enterprise.es/es/ayuda/preguntas-frecuentes/politica-cancelacion-y-modificacion.html |
 | ES | Late return | https://www.enterprise.com/en/car-rental-faqs/spain-general/delay-returning-rental-car.html |
+| US | Pets | https://www.enterprise.com/en/car-rental-faqs/us-general/car-rental-pet-friendly-policy.html |
+| DE, ES | Pets | No pet policy published: the pet page applies to US locations only, and the Germany FAQ list (https://www.enterprise.com/en/car-rental-faqs/germany-general.html) and the Spain FAQ pages have no pet question |
 
 ## Known gaps in the published information
 
@@ -59,5 +68,10 @@ change and differ by rate type, so re-check before relying on them.
 - **Avis US late charge of up to $15 per day:** Avis states this for
   renters who do not notify Avis of a longer rental; the FAQ wording ties
   it to notifying within 7 hours of the scheduled return.
-- **Not covered at all:** pets, additional drivers, deposits, fuel, age
-  limits. Questions on these are recorded as knowledge gaps.
+- **Pet cleaning fees:** only Avis US gives an amount (up to $450). Avis
+  DE/ES say it depends on the station or country; SIXT and Enterprise give
+  none.
+- **SIXT Spain pet add-on:** the "Tarifa Mascota a Bordo" has no price on
+  the help page.
+- **Not covered at all:** additional drivers, deposits, fuel, age limits.
+  Questions on these are recorded as knowledge gaps.

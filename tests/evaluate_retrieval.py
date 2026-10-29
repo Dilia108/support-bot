@@ -33,7 +33,7 @@ from exceptions import KBGapError
 from knowledge import retriever as keyword_retriever
 from knowledge import vector_retriever
 from knowledge.kb_loader import load_kb
-from tests.retrieval_questions import HEADINGS, QUESTIONS
+from tests.retrieval_questions import HEADINGS, OPTIONAL_TOPICS, QUESTIONS
 
 THRESHOLDS = [x / 100 for x in range(30, 75, 5)]
 
@@ -48,9 +48,11 @@ def keyword_answer(question, docs):
 def main() -> None:
     rows = []
     for market, question, topic, held_out in QUESTIONS:
-        expected = HEADINGS[market][topic] if topic else None
         for supplier in config.SUPPORTED_SUPPLIERS:
             docs = load_kb(market, supplier)
+            expected = HEADINGS[market][topic] if topic else None
+            if topic in OPTIONAL_TOPICS and expected not in {d.heading for d in docs}:
+                expected = None  # this supplier has no entry on the topic: a gap is right
             rows.append({
                 "where": f"{market}/{supplier}", "question": question, "expected": expected, "held_out": held_out,
                 "keyword": keyword_answer(question, docs),

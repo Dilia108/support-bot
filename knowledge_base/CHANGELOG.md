@@ -23,6 +23,37 @@ market and supplier.
 Entry types: **Added** (new topic or new supplier), **Changed** (policy or
 wording changed), **Corrected** (the previous text was wrong), **Removed**.
 
+## 2026-10-29
+
+New versions for all nine files.
+
+- **Added, pets, `de/avis`, `de/sixt`, `us/avis`, `us/sixt`, `us/enterprise`,
+  `es/avis`.** New entry "Haustiere mitnehmen" / "Mascotas en el coche" /
+  "Pets in the car": whether pets are allowed, conditions (Avis Spain needs
+  the office's approval, Enterprise US requires a crate), cleaning fees
+  (Avis US up to $450; the others give no amount) and service animals
+  where the supplier mentions them.
+  *Why:* pets were the most-asked unanswered topic on the dashboard, asked
+  in all three markets and for every supplier.
+  *Source:* the suppliers' pet pages, listed in `SOURCES.md`.
+- **Added, pets, `de/enterprise`, `es/enterprise`.** Enterprise publishes a
+  pet policy only for its US locations. The entry says so and asks the
+  customer to check with the branch before pick-up, instead of answering
+  "no information".
+- **Added, pets, `es/sixt`, by hand.** SIXT Spain's pet page could not be
+  read automatically; its text was copied from the browser. SIXT Spain is
+  the only supplier with a pet add-on ("Tarifa Mascota a Bordo") that covers
+  normal soiling; the page gives no price for it.
+- **Wording, before release.** In testing, words in the new entries pulled
+  unrelated questions to them: "mitfahren" matched "nach Polen fahren",
+  the heading "Viajar con mascotas" matched "Ya no voy a viajar", "según"
+  matched "segundo conductor", and "Call … to confirm" matched "called off"
+  and "confirmed". Those words were replaced; no policy content changed.
+
+### Known gaps at this version
+
+Additional drivers, deposits, fuel and age limits in all markets.
+
 ## 2026-10-06
 
 First versioned release. All nine files are dated 2026-10-06.

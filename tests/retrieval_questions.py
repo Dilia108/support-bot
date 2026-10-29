@@ -5,8 +5,11 @@ Evaluation set for knowledge base retrieval: customer questions with the FAQ
 topic that should answer them, or None when the KB has no answer (a gap the
 bot must record, not paper over).
 
-Every question is checked against all three suppliers of its market, because
-all supplier files cover the same four topics under the same headings.
+Every question is checked against all three suppliers of its market. All
+supplier files cover the four core topics under the same headings. Topics
+in OPTIONAL_TOPICS (added later, from the gap list) are only in some
+supplier files: where a supplier has no such entry, the question is
+expected to be a gap for that supplier.
 
 held_out=True marks phrasings written after the keyword retriever was tuned.
 The keyword rules were adjusted until the other questions passed, so only the
@@ -16,12 +19,19 @@ held-out ones say how a retriever copes with wording it has never seen.
 # FAQ heading per market for each topic.
 HEADINGS = {
     "de": {"cancel": "Buchung stornieren", "change": "Buchung ändern",
-           "status": "Buchungsstatus prüfen", "late": "Verspätete Rückgabe"},
+           "status": "Buchungsstatus prüfen", "late": "Verspätete Rückgabe",
+           "pets": "Haustiere mitnehmen"},
     "es": {"cancel": "Cancelar una reserva", "change": "Modificar una reserva",
-           "status": "Consultar el estado de la reserva", "late": "Devolución tardía"},
+           "status": "Consultar el estado de la reserva", "late": "Devolución tardía",
+           "pets": "Mascotas en el coche"},
     "us": {"cancel": "Cancel a booking", "change": "Change a booking",
-           "status": "Check booking status", "late": "Late return"},
+           "status": "Check booking status", "late": "Late return",
+           "pets": "Pets in the car"},
 }
+
+# Added with the 2026-10-29 KB version. Every supplier has the pets entry
+# today; a topic added later may start in only some supplier files.
+OPTIONAL_TOPICS = {"pets"}
 
 # (market, question, expected topic or None for a gap, held_out)
 QUESTIONS = [
@@ -40,7 +50,9 @@ QUESTIONS = [
     ("de", "Gibt es eine Kulanzzeit bei verspäteter Rückgabe?", "late", False),
     ("de", "Ich stehe im Stau und bin eine Stunde später an der Station.", "late", True),
     ("de", "Kostet es extra, wenn ich den Wagen erst abends zurückbringe?", "late", True),
-    ("de", "Kann ich meinen Hund mitnehmen?", None, False),
+    ("de", "Kann ich meinen Hund mitnehmen?", "pets", False),
+    ("de", "Darf meine Katze im Mietwagen mitfahren?", "pets", True),
+    ("de", "Darf ich ein Hund mit bringen?", "pets", True),
     ("de", "Kann ich einen zweiten Fahrer zu meiner Buchung hinzufügen?", None, False),
     ("de", "Was sind die Kosten für einen Kindersitz?", None, False),
     ("de", "Darf ich mit dem Mietwagen nach Polen fahren?", None, True),
@@ -58,7 +70,8 @@ QUESTIONS = [
     ("es", "¿Qué pasaría si devuelvo el auto 30 minutos más tarde de lo acordado?", "late", False),
     ("es", "que pasa con una devolucion tardia", "late", False),
     ("es", "Hay mucho tráfico y llegaré una hora tarde a devolver el coche.", "late", True),
-    ("es", "¿Puedo llevar a mi perro?", None, False),
+    ("es", "¿Puedo llevar a mi perro?", "pets", False),
+    ("es", "¿Se admiten gatos en el coche de alquiler?", "pets", True),
     ("es", "¿Puedo añadir un segundo conductor a mi reserva?", None, False),
     ("es", "¿Cuánto es la fianza?", None, True),
     ("es", "¿Puedo cruzar a Portugal con el coche?", None, True),
@@ -75,7 +88,9 @@ QUESTIONS = [
     ("us", "what would happen if I return the car 30 minutes later than the agreed return time?", "late", False),
     ("us", "Is there a grace period if I'm late?", "late", False),
     ("us", "I'm stuck in traffic and will drop the car off an hour late.", "late", True),
-    ("us", "Can I bring my dog?", None, False),
+    ("us", "Can I bring my dog?", "pets", False),
+    ("us", "Can I bring my cat with me?", "pets", True),
+    ("us", "Is there a fee if my dog leaves hair in the car?", "pets", True),
     ("us", "Can I add a second driver to my booking?", None, False),
     ("us", "How much is the security deposit?", None, True),
     ("us", "Can I drive the car into Canada?", None, True),
